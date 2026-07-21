@@ -299,6 +299,7 @@ function show(id) {
 function goHome() {
   if (workoutTimer) clearInterval(workoutTimer);
   speechSynthesis.cancel();
+  releaseWakeLock();
   refreshHomeStats();
   show("screen-home");
 }
@@ -384,6 +385,26 @@ document.getElementById("startWorkoutBtn").addEventListener("click", () => {
   startWorkout(pendingRoutineId, pendingIntensityId);
 });
 
+/* ============================== SCREEN WAKE LOCK ============================== */
+// Keeps the screen from dimming/locking mid-workout. Unsupported in some browsers (e.g.
+// Firefox) -- fails silently there and the workout still works fine, the screen just won't be
+// held awake. The lock is auto-released by the browser whenever the tab is backgrounded, so it
+// needs re-requesting on visibilitychange rather than only once at workout start.
+let wakeLock = null;
+async function acquireWakeLock() {
+  try {
+    if (!("wakeLock" in navigator)) return;
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => { wakeLock = null; });
+  } catch (e) { /* denied or unavailable -- ignore */ }
+}
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && workout && !wakeLock) acquireWakeLock();
+});
+
 /* ============================== WORKOUT FLOW ============================== */
 let workout = null; // { routine, intensity, flat:[{id,work,rest}], idx, phase, secondsLeft, paused, startedAt }
 let workoutTimer = null;
@@ -405,6 +426,7 @@ function startWorkout(routineId, intensityId) {
   renderWorkoutStep();
   speak("Get ready");
   show("screen-workout");
+  acquireWakeLock();
   if (workoutTimer) clearInterval(workoutTimer);
   workoutTimer = setInterval(workoutTick, 1000);
 }
@@ -490,6 +512,7 @@ function advanceWorkoutPhase() {
 function finishWorkout() {
   clearInterval(workoutTimer);
   speechSynthesis.cancel();
+  releaseWakeLock();
   speak("Workout complete. Great job!");
   state.sessionsCompleted++;
   state.totalSecondsTrained += workout.elapsedSeconds;
