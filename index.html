@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Home Circuit</title>
+<meta name="theme-color" content="#E0522E">
+<style>
+  :root {
+    --bg: #FBF5F1; --surface: #FFFFFF; --ink: #241A15; --ink-soft: #7A6A60; --line: #EDE0D8;
+    --accent: #E0522E; --accent2: #2E8B6E; --good: #2E9E6C; --good-soft: #E4F5EC;
+    --bad: #D9534F; --bad-soft: #FBE7E6; --track: #F1E5DD; --shadow: 0 6px 20px rgba(60,30,15,0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #17110D; --surface: #241B15; --ink: #F7EDE6; --ink-soft: #B0A095; --line: #3A2C22;
+      --accent: #FF7A52; --accent2: #4CBE97; --good: #4BC48A; --good-soft: #163326;
+      --bad: #E8807C; --bad-soft: #3A1E1D; --track: #2E241C; --shadow: 0 6px 20px rgba(0,0,0,0.4); }
+  }
+  :root[data-theme="dark"] { --bg: #17110D; --surface: #241B15; --ink: #F7EDE6; --ink-soft: #B0A095; --line: #3A2C22;
+    --accent: #FF7A52; --accent2: #4CBE97; --good: #4BC48A; --good-soft: #163326;
+    --bad: #E8807C; --bad-soft: #3A1E1D; --track: #2E241C; --shadow: 0 6px 20px rgba(0,0,0,0.4); }
+  :root[data-theme="light"] { --bg: #FBF5F1; --surface: #FFFFFF; --ink: #241A15; --ink-soft: #7A6A60; --line: #EDE0D8;
+    --accent: #E0522E; --accent2: #2E8B6E; --good: #2E9E6C; --good-soft: #E4F5EC;
+    --bad: #D9534F; --bad-soft: #FBE7E6; --track: #F1E5DD; --shadow: 0 6px 20px rgba(60,30,15,0.08); }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5; }
+  .app { max-width: 640px; margin: 0 auto; padding: 22px 18px 60px; }
+  button { font: inherit; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  header.top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .brand { display: flex; align-items: center; gap: 9px; }
+  .brand .icon { font-size: 1.7rem; }
+  .brand h1 { font-size: 1.2rem; font-weight: 900; margin: 0; letter-spacing: -0.01em; }
+  .streak-pill { display: flex; align-items: center; gap: 5px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 999px; padding: 6px 11px; font-weight: 800; font-size: 0.82rem; box-shadow: var(--shadow); }
+
+  .back-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .back-btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 12px;
+    font-weight: 700; font-size: 0.85rem; color: var(--ink); cursor: pointer; }
+  .screen-title { font-size: 1.05rem; font-weight: 900; }
+
+  .home-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 20px; }
+  .home-stat { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 10px;
+    text-align: center; box-shadow: var(--shadow); }
+  .home-stat .hs-num { font-size: 1.3rem; font-weight: 900; font-variant-numeric: tabular-nums; }
+  .home-stat .hs-label { font-size: 0.66rem; color: var(--ink-soft); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+
+  h2.section-h { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft);
+    font-weight: 800; margin: 24px 0 10px; }
+
+  .routine-grid { display: flex; flex-direction: column; gap: 12px; }
+  .routine-card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 16px;
+    text-align: left; cursor: pointer; box-shadow: var(--shadow); display: flex; gap: 12px; align-items: center; width: 100%; }
+  .routine-card .rc-icon { font-size: 1.8rem; flex-shrink: 0; width: 44px; text-align: center; }
+  .routine-card .rc-body { flex: 1; min-width: 0; }
+  .routine-card .rc-name { font-weight: 800; font-size: 0.95rem; }
+  .routine-card .rc-desc { font-size: 0.78rem; color: var(--ink-soft); margin-top: 2px; }
+  .routine-card .rc-meta { font-size: 0.72rem; color: var(--accent2); font-weight: 800; margin-top: 5px; }
+
+  .disclaimer { background: var(--track); border-radius: 12px; padding: 12px 14px; font-size: 0.76rem;
+    color: var(--ink-soft); line-height: 1.55; margin-top: 20px; }
+
+  .intensity-grid { display: flex; flex-direction: column; gap: 10px; margin: 6px 0 20px; }
+  .intensity-card { background: var(--surface); border: 1.5px solid var(--line); border-radius: 16px; padding: 14px 16px;
+    text-align: left; cursor: pointer; width: 100%; }
+  .intensity-card.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+  .intensity-card .ic-name { font-weight: 800; font-size: 0.92rem; }
+  .intensity-card .ic-desc { font-size: 0.78rem; color: var(--ink-soft); margin-top: 2px; }
+
+  .primary-btn { display: block; width: 100%; max-width: 420px; margin: 10px auto 0; padding: 14px;
+    border-radius: 14px; border: none; background: var(--accent); color: #fff; font-weight: 900;
+    font-size: 0.95rem; cursor: pointer; text-align: center; }
+  .ghost-btn { display: block; width: 100%; max-width: 420px; margin: 10px auto 0; padding: 12px;
+    border-radius: 14px; border: 1px solid var(--line); background: transparent; color: var(--ink);
+    font-weight: 700; font-size: 0.88rem; cursor: pointer; text-align: center; }
+
+  .progress-track { height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; margin-bottom: 18px; }
+  .progress-track .fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.25s; }
+  .workout-progress-label { text-align: center; font-size: 0.78rem; color: var(--ink-soft); font-weight: 700; margin-bottom: 6px; }
+
+  .workout-card { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 30px 20px;
+    text-align: center; box-shadow: var(--shadow); }
+  .phase-tag { display: inline-block; padding: 5px 14px; border-radius: 999px; font-size: 0.72rem; font-weight: 900;
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px; }
+  .phase-tag.prepare { background: var(--track); color: var(--ink-soft); }
+  .phase-tag.work { background: var(--good-soft); color: var(--good); }
+  .phase-tag.rest { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); color: var(--accent); }
+  .wc-icon { font-size: 3rem; }
+  .wc-name { font-size: 1.35rem; font-weight: 900; margin: 8px 0 4px; }
+  .wc-cue { font-size: 0.86rem; color: var(--ink-soft); max-width: 340px; margin: 0 auto 18px; min-height: 1.3em; }
+  .wc-timer { font-size: 3.6rem; font-weight: 900; font-variant-numeric: tabular-nums; color: var(--accent); line-height: 1; }
+  .wc-next { font-size: 0.82rem; color: var(--ink-soft); margin-top: 14px; min-height: 1.2em; }
+  .wc-controls { display: flex; gap: 10px; margin-top: 22px; justify-content: center; flex-wrap: wrap; }
+  .wc-btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 12px;
+    padding: 11px 16px; font-weight: 800; font-size: 0.85rem; cursor: pointer; box-shadow: var(--shadow); }
+  .wc-btn.primary { background: var(--accent); color: #fff; border: none; }
+
+  .result-hero { text-align: center; padding: 10px 0 20px; }
+  .result-hero .r-emoji { font-size: 2.8rem; }
+  .result-hero h3 { font-size: 1.3rem; margin: 8px 0 2px; }
+  .result-hero .r-score { font-size: 2.2rem; font-weight: 900; color: var(--accent); margin: 6px 0; }
+  .result-hero p { color: var(--ink-soft); font-size: 0.88rem; margin: 0; max-width: 420px; margin: 0 auto; }
+
+  footer.note { text-align: center; color: var(--ink-soft); font-size: 0.76rem; margin-top: 40px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div id="screen-home" class="screen active">
+    <header class="top">
+      <div class="brand"><span class="icon">🏋️</span><h1>Home Circuit</h1></div>
+      <div class="streak-pill">🔥 <span id="streakCount">0</span></div>
+    </header>
+
+    <div class="home-stats">
+      <div class="home-stat"><div class="hs-num" id="statSessions">0</div><div class="hs-label">Workouts done</div></div>
+      <div class="home-stat"><div class="hs-num" id="statMinutes">0</div><div class="hs-label">Minutes trained</div></div>
+      <div class="home-stat"><div class="hs-num" id="statStreak">0</div><div class="hs-label">Day streak</div></div>
+    </div>
+
+    <h2 class="section-h">Pick a workout</h2>
+    <div class="routine-grid" id="routineGrid"></div>
+
+    <div class="disclaimer">
+      💡 Bodyweight only — no equipment needed. Go at your own pace, use the easier variation of any move if you need
+      to, and stop if anything hurts. This is general fitness guidance for fun and consistency, not medical or
+      professional training advice.
+    </div>
+  </div>
+
+  <!-- ===== Intensity picker ===== -->
+  <div id="screen-intensity" class="screen">
+    <div class="back-row"><button class="back-btn" onclick="goHome()">← Back</button><div class="screen-title" id="intensityScreenTitle">Choose intensity</div></div>
+    <div class="intensity-grid" id="intensityGrid"></div>
+    <button class="primary-btn" id="startWorkoutBtn">Start workout</button>
+  </div>
+
+  <!-- ===== Workout running ===== -->
+  <div id="screen-workout" class="screen">
+    <div class="back-row"><button class="back-btn" id="quitWorkoutBtn">← Quit</button><div class="screen-title" id="workoutScreenTitle"></div>
+      <button class="back-btn" id="voiceToggleBtn" style="margin-left:auto;">🔊</button>
+    </div>
+    <div class="workout-progress-label" id="workoutProgressLabel"></div>
+    <div class="progress-track"><div class="fill" id="workoutProgressFill" style="width:0%"></div></div>
+    <div class="workout-card">
+      <div class="phase-tag" id="phaseTag">Get ready</div>
+      <div class="wc-icon" id="wcIcon">🤸</div>
+      <div class="wc-name" id="wcName">Get ready</div>
+      <div class="wc-cue" id="wcCue"></div>
+      <div class="wc-timer" id="wcTimer">5</div>
+      <div class="wc-next" id="wcNext"></div>
+      <div class="wc-controls">
+        <button class="wc-btn primary" id="pauseBtn">Pause</button>
+        <button class="wc-btn" id="skipBtn">Skip →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Complete ===== -->
+  <div id="screen-complete" class="screen">
+    <div class="result-hero">
+      <div class="r-emoji" id="compEmoji">🎉</div>
+      <h3 id="compTitle">Workout complete!</h3>
+      <div class="r-score" id="compTime"></div>
+      <p id="compSub"></p>
+    </div>
+    <button class="primary-btn" id="doAgainBtn">Do it again</button>
+    <button class="ghost-btn" onclick="goHome()">Back to Home Circuit</button>
+  </div>
+
+  <footer class="note">Everything runs and stays in this browser — no accounts, no uploads, no tracking.</footer>
+</div>
+
+<script>
+"use strict";
+
+/* ============================== EXERCISE BANK ============================== */
+const EXERCISES = {
+  armCircles:        { name: "Arm Circles",           icon: "🙆", cue: "Small circles forward, then reverse — keep shoulders loose." },
+  jumpingJacks:       { name: "Jumping Jacks",          icon: "🤸", cue: "Full range, land softly on the balls of your feet." },
+  highKnees:          { name: "High Knees",             icon: "🏃", cue: "Drive knees to hip height, quick and light on your feet." },
+  torsoTwists:         { name: "Torso Twists",           icon: "🔄", cue: "Rotate from the waist, arms loose, feet planted." },
+  squats:             { name: "Squats",                 icon: "🏋️", cue: "Feet shoulder-width, chest up, knees track over your toes." },
+  pushups:            { name: "Push-ups",               icon: "💪", cue: "Straight line head to heels — drop to knees if you need to." },
+  lunges:             { name: "Alternating Lunges",     icon: "🚶", cue: "Step forward, back knee hovers just above the floor." },
+  plank:              { name: "Plank",                  icon: "🧘", cue: "Forearms down, straight line, brace your core." },
+  gluteBridges:        { name: "Glute Bridges",          icon: "🌉", cue: "Squeeze your glutes at the top, don't overarch your back." },
+  superman:            { name: "Superman",               icon: "🦸", cue: "Lift chest and legs together, squeeze your lower back." },
+  wallSit:             { name: "Wall Sit",               icon: "🪑", cue: "Back flat against a wall, thighs parallel to the floor." },
+  sidePlank:           { name: "Side Plank",             icon: "🤺", cue: "Stack your feet, hips lifted, straight line — switch sides halfway." },
+  tricepDips:          { name: "Tricep Dips",            icon: "🪑", cue: "Hands on a sturdy chair edge, bend elbows to about 90°." },
+  calfRaises:          { name: "Calf Raises",            icon: "🦵", cue: "Rise onto your toes slowly, control the way down." },
+  mountainClimbers:     { name: "Mountain Climbers",      icon: "⛰️", cue: "Drive knees to your chest quickly, keep hips low." },
+  burpees:             { name: "Burpees",                icon: "🔥", cue: "Squat, kick back to plank, push-up, jump up." },
+  squatJumps:          { name: "Squat Jumps",            icon: "🚀", cue: "Explode up from a squat, land soft and reset." },
+  starJumps:           { name: "Star Jumps",             icon: "⭐", cue: "Jump feet and arms out wide, then back in." },
+  buttKicks:           { name: "Butt Kicks",             icon: "👟", cue: "Quick heels up to your glutes, stay light on your feet." },
+  bicycleCrunches:      { name: "Bicycle Crunches",       icon: "🚴", cue: "Elbow to opposite knee, slow and controlled." },
+  russianTwists:        { name: "Russian Twists",         icon: "🌀", cue: "Lean back slightly, rotate side to side with control." },
+  plankShoulderTaps:     { name: "Plank Shoulder Taps",    icon: "👋", cue: "Stay stable — minimise hip sway as you tap." },
+  legRaises:           { name: "Leg Raises",             icon: "🦿", cue: "Lower your legs slowly, keep your lower back down." },
+  childsPose:          { name: "Child's Pose",           icon: "🙏", cue: "Sit back on your heels, reach forward, breathe slowly." },
+  quadStretch:         { name: "Standing Quad Stretch",  icon: "🧍", cue: "Hold your ankle behind you, knees together." },
+  hamstringStretch:     { name: "Hamstring Stretch",      icon: "🙇", cue: "Hinge at the hips, reach gently toward your toes." },
+  chestOpener:         { name: "Chest Opener Stretch",   icon: "🫁", cue: "Clasp your hands behind your back, lift your chest." },
+  deepBreathing:        { name: "Deep Breathing",         icon: "🌬️", cue: "Slow breaths in through the nose, out through the mouth." },
+};
+
+/* ============================== ROUTINES ============================== */
+const ROUTINES = [
+  {
+    id: "quickStarter", icon: "⚡", name: "5-Minute Quick Starter", difficulty: "Beginner",
+    desc: "A short full-body burst for busy days.", workSec: 30, restSec: 10,
+    sequence: ["jumpingJacks", "squats", "pushups", "plank", "lunges"],
+  },
+  {
+    id: "fullBodyBeginner", icon: "🌟", name: "Full Body Beginner", difficulty: "Beginner",
+    desc: "A gentle, complete full-body circuit to build the habit.", workSec: 35, restSec: 18,
+    sequence: ["jumpingJacks", "armCircles", "squats", "pushups", "gluteBridges", "plank", "lunges", "superman",
+      "squats", "pushups", "gluteBridges", "plank", "lunges", "superman", "childsPose", "hamstringStretch"],
+  },
+  {
+    id: "upperBodyPush", icon: "💪", name: "Upper Body Push", difficulty: "Standard",
+    desc: "Chest, shoulders and arms — no equipment needed.", workSec: 35, restSec: 15,
+    sequence: ["armCircles", "torsoTwists", "pushups", "tricepDips", "plankShoulderTaps", "plank", "superman",
+      "pushups", "tricepDips", "plankShoulderTaps", "plank", "superman", "chestOpener", "childsPose"],
+  },
+  {
+    id: "lowerBodyPower", icon: "🦵", name: "Lower Body Power", difficulty: "Standard",
+    desc: "Squats, lunges and holds to build leg strength.", workSec: 35, restSec: 15,
+    sequence: ["highKnees", "squats", "lunges", "gluteBridges", "wallSit", "calfRaises", "squatJumps",
+      "squats", "lunges", "gluteBridges", "wallSit", "calfRaises", "quadStretch", "hamstringStretch"],
+  },
+  {
+    id: "coreCrusher", icon: "🔥", name: "Core Crusher", difficulty: "Standard",
+    desc: "Plank variations, twists and crunches for a strong middle.", workSec: 30, restSec: 15,
+    sequence: ["torsoTwists", "jumpingJacks", "plank", "bicycleCrunches", "russianTwists", "legRaises",
+      "plankShoulderTaps", "sidePlank", "plank", "bicycleCrunches", "russianTwists", "legRaises",
+      "childsPose", "deepBreathing"],
+  },
+  {
+    id: "hiitBlast", icon: "⚡", name: "HIIT Cardio Blast", difficulty: "Advanced",
+    desc: "High-intensity full-body intervals to get your heart rate up.", workSec: 30, restSec: 12,
+    sequence: ["jumpingJacks", "highKnees", "mountainClimbers", "squatJumps", "burpees", "starJumps", "buttKicks",
+      "mountainClimbers", "squatJumps", "burpees", "starJumps", "buttKicks", "highKnees",
+      "deepBreathing", "hamstringStretch", "childsPose"],
+  },
+];
+
+const INTENSITIES = [
+  { id: "easier", name: "Easier", workMul: 0.72, restMul: 1.5, desc: "Shorter work intervals, longer rests." },
+  { id: "standard", name: "Standard", workMul: 1, restMul: 1, desc: "The routine's normal pace." },
+  { id: "harder", name: "Harder", workMul: 1.3, restMul: 0.65, desc: "Longer work intervals, shorter rests." },
+];
+
+/* ============================== STATE / PERSISTENCE ============================== */
+const STORE_KEY = "homecircuit_state_v1";
+function defaultState() {
+  return { streak: 0, lastPlayDate: null, sessionsCompleted: 0, totalSecondsTrained: 0, voiceEnabled: true };
+}
+let state = loadState();
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return defaultState();
+    return Object.assign(defaultState(), JSON.parse(raw));
+  } catch (e) { return defaultState(); }
+}
+function saveState() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* progress just won't persist */ }
+}
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+function touchStreak() {
+  const today = todayStr();
+  if (state.lastPlayDate === today) return;
+  const y = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  state.streak = (state.lastPlayDate === y) ? state.streak + 1 : 1;
+  state.lastPlayDate = today;
+}
+function refreshHomeStats() {
+  document.getElementById("streakCount").textContent = state.streak;
+  document.getElementById("statSessions").textContent = state.sessionsCompleted;
+  document.getElementById("statMinutes").textContent = Math.round(state.totalSecondsTrained / 60);
+  document.getElementById("statStreak").textContent = state.streak;
+}
+
+/* ============================== SCREEN NAV ============================== */
+function show(id) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+  window.scrollTo(0, 0);
+}
+function goHome() {
+  if (workoutTimer) clearInterval(workoutTimer);
+  speechSynthesis.cancel();
+  refreshHomeStats();
+  show("screen-home");
+}
+
+/* ============================== VOICE + BEEP ============================== */
+function speak(text) {
+  if (!state.voiceEnabled || !("speechSynthesis" in window)) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1.0;
+  speechSynthesis.speak(u);
+}
+let beepCtx = null;
+// Created/resumed synchronously inside the "Start workout" click handler (a real user gesture)
+// so the very first tick's beep isn't silently blocked by the browser's autoplay policy.
+function ensureBeepCtx() {
+  if (!beepCtx) beepCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (beepCtx.state === "suspended") beepCtx.resume();
+}
+function beep(freq, dur) {
+  try {
+    if (!beepCtx) return;
+    const osc = beepCtx.createOscillator(); const gain = beepCtx.createGain();
+    osc.type = "sine"; osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, beepCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.25, beepCtx.currentTime + 0.01);
+    gain.gain.linearRampToValueAtTime(0.0001, beepCtx.currentTime + dur);
+    osc.connect(gain); gain.connect(beepCtx.destination);
+    osc.start(); osc.stop(beepCtx.currentTime + dur + 0.02);
+  } catch (e) { /* audio unavailable -- silently skip the tick sound */ }
+}
+
+/* ============================== HOME RENDER ============================== */
+function estimateSeconds(routine) {
+  let total = 5; // prepare countdown
+  routine.sequence.forEach((_, i) => {
+    total += routine.workSec;
+    if (i < routine.sequence.length - 1) total += routine.restSec;
+  });
+  return total;
+}
+function renderRoutineGrid() {
+  const grid = document.getElementById("routineGrid");
+  grid.innerHTML = "";
+  ROUTINES.forEach(r => {
+    const mins = Math.round(estimateSeconds(r) / 60);
+    const btn = document.createElement("button");
+    btn.className = "routine-card";
+    btn.innerHTML = `<div class="rc-icon">${r.icon}</div>
+      <div class="rc-body">
+        <div class="rc-name">${r.name}</div>
+        <div class="rc-desc">${r.desc}</div>
+        <div class="rc-meta">~${mins} min · ${r.difficulty}</div>
+      </div>`;
+    btn.onclick = () => openIntensityPicker(r.id);
+    grid.appendChild(btn);
+  });
+}
+
+/* ============================== INTENSITY PICKER ============================== */
+let pendingRoutineId = null, pendingIntensityId = "standard";
+function openIntensityPicker(routineId) {
+  pendingRoutineId = routineId;
+  pendingIntensityId = "standard";
+  const routine = ROUTINES.find(r => r.id === routineId);
+  document.getElementById("intensityScreenTitle").textContent = routine.name;
+  renderIntensityGrid();
+  show("screen-intensity");
+}
+function renderIntensityGrid() {
+  const grid = document.getElementById("intensityGrid");
+  grid.innerHTML = "";
+  INTENSITIES.forEach(iv => {
+    const card = document.createElement("button");
+    card.className = "intensity-card" + (iv.id === pendingIntensityId ? " selected" : "");
+    card.innerHTML = `<div class="ic-name">${iv.name}</div><div class="ic-desc">${iv.desc}</div>`;
+    card.onclick = () => { pendingIntensityId = iv.id; renderIntensityGrid(); };
+    grid.appendChild(card);
+  });
+}
+document.getElementById("startWorkoutBtn").addEventListener("click", () => {
+  ensureBeepCtx();
+  startWorkout(pendingRoutineId, pendingIntensityId);
+});
+
+/* ============================== WORKOUT FLOW ============================== */
+let workout = null; // { routine, intensity, flat:[{id,work,rest}], idx, phase, secondsLeft, paused, startedAt }
+let workoutTimer = null;
+
+function startWorkout(routineId, intensityId) {
+  const routine = ROUTINES.find(r => r.id === routineId);
+  const intensity = INTENSITIES.find(iv => iv.id === intensityId);
+  const workSec = Math.max(8, Math.round(routine.workSec * intensity.workMul));
+  const restSec = Math.max(5, Math.round(routine.restSec * intensity.restMul));
+  workout = {
+    routine, intensity, workSec, restSec,
+    idx: -1, // -1 = prepare phase
+    phase: "prepare", secondsLeft: 5, paused: false,
+    elapsedSeconds: 0,
+  };
+  document.getElementById("workoutScreenTitle").textContent = routine.name;
+  document.getElementById("voiceToggleBtn").textContent = state.voiceEnabled ? "🔊" : "🔇";
+  document.getElementById("pauseBtn").textContent = "Pause";
+  renderWorkoutStep();
+  speak("Get ready");
+  show("screen-workout");
+  if (workoutTimer) clearInterval(workoutTimer);
+  workoutTimer = setInterval(workoutTick, 1000);
+}
+
+function currentExerciseId() {
+  return workout.routine.sequence[Math.max(0, workout.idx)];
+}
+function nextExerciseId() {
+  return workout.routine.sequence[workout.idx + 1];
+}
+
+function renderWorkoutStep() {
+  const total = workout.routine.sequence.length;
+  document.getElementById("workoutProgressLabel").textContent =
+    workout.idx < 0 ? `Starting — ${total} exercises` : `Exercise ${Math.min(workout.idx + 1, total)} / ${total}`;
+  const progressPct = workout.idx < 0 ? 0 : ((workout.idx + (workout.phase === "rest" ? 1 : 0)) / total) * 100;
+  document.getElementById("workoutProgressFill").style.width = progressPct + "%";
+
+  const tag = document.getElementById("phaseTag");
+  const ex = EXERCISES[currentExerciseId()];
+  if (workout.phase === "prepare") {
+    tag.className = "phase-tag prepare"; tag.textContent = "Get ready";
+    document.getElementById("wcIcon").textContent = "⏱️";
+    document.getElementById("wcName").textContent = "Starting soon";
+    document.getElementById("wcCue").textContent = "Find some space and get into position.";
+    document.getElementById("wcNext").textContent = `First up: ${EXERCISES[workout.routine.sequence[0]].name}`;
+  } else if (workout.phase === "work") {
+    tag.className = "phase-tag work"; tag.textContent = "Work";
+    document.getElementById("wcIcon").textContent = ex.icon;
+    document.getElementById("wcName").textContent = ex.name;
+    document.getElementById("wcCue").textContent = ex.cue;
+    const nid = nextExerciseId();
+    document.getElementById("wcNext").textContent = nid ? `Up next: ${EXERCISES[nid].name}` : "Last exercise!";
+  } else if (workout.phase === "rest") {
+    tag.className = "phase-tag rest"; tag.textContent = "Rest";
+    document.getElementById("wcIcon").textContent = "😮‍💨";
+    document.getElementById("wcName").textContent = "Rest";
+    document.getElementById("wcCue").textContent = "Shake it out, breathe, get ready to go again.";
+    const nid = nextExerciseId();
+    document.getElementById("wcNext").textContent = nid ? `Up next: ${EXERCISES[nid].name}` : "Almost done!";
+  }
+  document.getElementById("wcTimer").textContent = workout.secondsLeft;
+}
+
+function workoutTick() {
+  if (workout.paused) return;
+  workout.secondsLeft--;
+  workout.elapsedSeconds++;
+
+  if (workout.secondsLeft <= 3 && workout.secondsLeft > 0) beep(700, 0.12);
+
+  if (workout.secondsLeft <= 0) {
+    advanceWorkoutPhase();
+    return;
+  }
+  document.getElementById("wcTimer").textContent = workout.secondsLeft;
+}
+
+function advanceWorkoutPhase() {
+  const seq = workout.routine.sequence;
+  if (workout.phase === "prepare") {
+    workout.idx = 0;
+    workout.phase = "work";
+    workout.secondsLeft = workout.workSec;
+    speak(EXERCISES[seq[0]].name);
+  } else if (workout.phase === "work") {
+    if (workout.idx >= seq.length - 1) { finishWorkout(); return; }
+    workout.phase = "rest";
+    workout.secondsLeft = workout.restSec;
+    beep(500, 0.18);
+    const nid = seq[workout.idx + 1];
+    speak(`Rest. Next up: ${EXERCISES[nid].name}`);
+  } else if (workout.phase === "rest") {
+    workout.idx++;
+    workout.phase = "work";
+    workout.secondsLeft = workout.workSec;
+    beep(900, 0.15);
+    speak(EXERCISES[seq[workout.idx]].name);
+  }
+  renderWorkoutStep();
+}
+
+function finishWorkout() {
+  clearInterval(workoutTimer);
+  speechSynthesis.cancel();
+  speak("Workout complete. Great job!");
+  state.sessionsCompleted++;
+  state.totalSecondsTrained += workout.elapsedSeconds;
+  touchStreak();
+  saveState();
+
+  const mins = Math.round(workout.elapsedSeconds / 60);
+  document.getElementById("compEmoji").textContent = "🎉";
+  document.getElementById("compTitle").textContent = "Workout complete!";
+  document.getElementById("compTime").textContent = `${mins} min`;
+  document.getElementById("compSub").textContent =
+    `You finished ${workout.routine.sequence.length} exercises in ${workout.routine.name}. Nice work!`;
+  show("screen-complete");
+}
+
+document.getElementById("quitWorkoutBtn").addEventListener("click", () => {
+  if (confirm("Quit this workout? Your progress for this session won't be saved.")) goHome();
+});
+document.getElementById("pauseBtn").addEventListener("click", () => {
+  workout.paused = !workout.paused;
+  document.getElementById("pauseBtn").textContent = workout.paused ? "Resume" : "Pause";
+  if (workout.paused) speechSynthesis.cancel();
+});
+document.getElementById("skipBtn").addEventListener("click", () => {
+  advanceWorkoutPhase();
+});
+document.getElementById("voiceToggleBtn").addEventListener("click", () => {
+  state.voiceEnabled = !state.voiceEnabled;
+  saveState();
+  document.getElementById("voiceToggleBtn").textContent = state.voiceEnabled ? "🔊" : "🔇";
+  if (!state.voiceEnabled) speechSynthesis.cancel();
+});
+document.getElementById("doAgainBtn").addEventListener("click", () => {
+  startWorkout(workout.routine.id, workout.intensity.id);
+});
+
+/* ============================== INIT ============================== */
+refreshHomeStats();
+renderRoutineGrid();
+</script>
+</body>
+</html>
