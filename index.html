@@ -106,6 +106,17 @@
   .result-hero .r-score { font-size: 2.2rem; font-weight: 900; color: var(--accent); margin: 6px 0; }
   .result-hero p { color: var(--ink-soft); font-size: 0.88rem; margin: 0; max-width: 420px; margin: 0 auto; }
 
+  .form-guide-list { display: flex; flex-direction: column; gap: 10px; }
+  .form-guide-item { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px;
+    display: flex; gap: 12px; align-items: center; box-shadow: var(--shadow); }
+  .form-guide-item .fg-icon { font-size: 1.6rem; flex-shrink: 0; width: 36px; text-align: center; }
+  .form-guide-item .fg-body { flex: 1; min-width: 0; }
+  .form-guide-item .fg-name { font-weight: 800; font-size: 0.9rem; }
+  .form-guide-item .fg-cue { font-size: 0.78rem; color: var(--ink-soft); margin-top: 2px; }
+  .form-guide-item .fg-link { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; text-decoration: none;
+    background: var(--track); color: var(--accent); font-weight: 800; font-size: 0.76rem; padding: 8px 12px;
+    border-radius: 10px; white-space: nowrap; }
+
   footer.note { text-align: center; color: var(--ink-soft); font-size: 0.76rem; margin-top: 40px; line-height: 1.7; }
 </style>
 </head>
@@ -127,11 +138,20 @@
     <h2 class="section-h">Pick a workout</h2>
     <div class="routine-grid" id="routineGrid"></div>
 
+    <button class="ghost-btn" id="goFormGuideBtn" style="margin-top:18px;">📋 Exercise Form Guide</button>
+
     <div class="disclaimer">
       💡 Bodyweight only — no equipment needed. Go at your own pace, use the easier variation of any move if you need
       to, and stop if anything hurts. This is general fitness guidance for fun and consistency, not medical or
       professional training advice.
     </div>
+  </div>
+
+  <!-- ===== Exercise form guide ===== -->
+  <div id="screen-form-guide" class="screen">
+    <div class="back-row"><button class="back-btn" onclick="goHome()">← Back</button><div class="screen-title">Exercise Form Guide</div></div>
+    <p style="font-size:0.8rem;color:var(--ink-soft);margin:-4px 0 16px;">Every move used in these workouts, with a quick cue and a link to real videos so you can check your form.</p>
+    <div class="form-guide-list" id="formGuideList"></div>
   </div>
 
   <!-- ===== Intensity picker ===== -->
@@ -358,6 +378,34 @@ function renderRoutineGrid() {
     grid.appendChild(btn);
   });
 }
+
+/* ============================== FORM GUIDE ============================== */
+// Links out to a live YouTube search rather than any specific video -- specific video links
+// can't be verified as real, current, or actually showing correct form, and would rot over
+// time. A search always resolves to real, current results the user can judge for themselves.
+function formVideoSearchUrl(exerciseName) {
+  const q = encodeURIComponent(exerciseName + " proper form tutorial");
+  return `https://www.youtube.com/results?search_query=${q}`;
+}
+function renderFormGuide() {
+  const wrap = document.getElementById("formGuideList");
+  wrap.innerHTML = "";
+  Object.values(EXERCISES)
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach(ex => {
+      const row = document.createElement("div");
+      row.className = "form-guide-item";
+      row.innerHTML = `<div class="fg-icon">${ex.icon}</div>
+        <div class="fg-body"><div class="fg-name">${ex.name}</div><div class="fg-cue">${ex.cue}</div></div>
+        <a class="fg-link" href="${formVideoSearchUrl(ex.name)}" target="_blank" rel="noopener">▶ Watch form</a>`;
+      wrap.appendChild(row);
+    });
+}
+document.getElementById("goFormGuideBtn").addEventListener("click", () => {
+  renderFormGuide();
+  show("screen-form-guide");
+});
 
 /* ============================== INTENSITY PICKER ============================== */
 let pendingRoutineId = null, pendingIntensityId = "standard";
