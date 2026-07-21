@@ -111,11 +111,22 @@
     display: flex; gap: 12px; align-items: center; box-shadow: var(--shadow); }
   .form-guide-item .fg-icon { font-size: 1.6rem; flex-shrink: 0; width: 36px; text-align: center; }
   .form-guide-item .fg-body { flex: 1; min-width: 0; }
-  .form-guide-item .fg-name { font-weight: 800; font-size: 0.9rem; }
+  .form-guide-item .fg-name { font-weight: 800; font-size: 0.9rem; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
   .form-guide-item .fg-cue { font-size: 0.78rem; color: var(--ink-soft); margin-top: 2px; }
   .form-guide-item .fg-link { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; text-decoration: none;
     background: var(--track); color: var(--accent); font-weight: 800; font-size: 0.76rem; padding: 8px 12px;
     border-radius: 10px; white-space: nowrap; }
+  .fg-level { font-size: 0.62rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 2px 7px; border-radius: 999px; }
+  .fg-level.beginner { background: var(--good-soft); color: var(--good); }
+  .fg-level.standard { background: var(--track); color: var(--ink-soft); }
+  .fg-level.advanced { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); color: var(--accent); }
+  .fg-group { margin-bottom: 26px; }
+  .fg-group-head { display: flex; align-items: center; gap: 9px; font-weight: 900; font-size: 1.02rem; margin-bottom: 10px; }
+  .fg-group-icon { font-size: 1.4rem; }
+  .fg-group-note { font-size: 0.76rem; color: var(--ink-soft); background: var(--track); padding: 9px 13px;
+    border-radius: 10px; margin-bottom: 10px; line-height: 1.5; }
+  .fg-group .form-guide-item { padding: 11px 14px; }
 
   footer.note { text-align: center; color: var(--ink-soft); font-size: 0.76rem; margin-top: 40px; line-height: 1.7; }
 </style>
@@ -164,7 +175,8 @@
   <!-- ===== Workout running ===== -->
   <div id="screen-workout" class="screen">
     <div class="back-row"><button class="back-btn" id="quitWorkoutBtn">← Quit</button><div class="screen-title" id="workoutScreenTitle"></div>
-      <button class="back-btn" id="voiceToggleBtn" style="margin-left:auto;">🔊</button>
+      <button class="back-btn" id="coachStyleBtn" style="margin-left:auto;" title="Switch coach voice style">🎙️</button>
+      <button class="back-btn" id="voiceToggleBtn">🔊</button>
     </div>
     <div class="workout-progress-label" id="workoutProgressLabel"></div>
     <div class="progress-track"><div class="fill" id="workoutProgressFill" style="width:0%"></div></div>
@@ -282,7 +294,7 @@ const INTENSITIES = [
 /* ============================== STATE / PERSISTENCE ============================== */
 const STORE_KEY = "homecircuit_state_v1";
 function defaultState() {
-  return { streak: 0, lastPlayDate: null, sessionsCompleted: 0, totalSecondsTrained: 0, voiceEnabled: true };
+  return { streak: 0, lastPlayDate: null, sessionsCompleted: 0, totalSecondsTrained: 0, voiceEnabled: true, coachStyle: "calm" };
 }
 let state = loadState();
 function loadState() {
@@ -325,11 +337,42 @@ function goHome() {
 }
 
 /* ============================== VOICE + BEEP ============================== */
+// Browser text-to-speech can't produce a genuinely different *character* of voice on demand --
+// there's no real "shouting drill sergeant" voice to select. What we CAN do: change the wording
+// to sound like one, and push pitch down / rate up so it reads more clipped and forceful, plus
+// best-effort prefer a deeper male system voice if one's available. It's a fun approximation,
+// not an actual different voice actor.
+const COACH_STYLES = {
+  calm: {
+    id: "calm", pitch: 1.0, rate: 1.0,
+    prepare: () => "Get ready",
+    exerciseStart: (name) => name,
+    restStart: (nextName) => nextName ? `Rest. Next up: ${nextName}.` : "Rest. Almost done.",
+    finish: () => "Workout complete. Great job!",
+  },
+  sergeant: {
+    id: "sergeant", pitch: 0.55, rate: 1.18,
+    prepare: () => "Attention! On your feet! We start in five!",
+    exerciseStart: (name) => `${name}! Let's go! Move it, move it!`,
+    restStart: (nextName) => nextName ? `Rest! Catch your breath — next up, ${nextName}! Be ready!` : "Rest! Nearly there, don't you dare quit now!",
+    finish: () => "Workout complete! Outstanding effort, recruit! Dismissed!",
+  },
+};
+function coachStyle() { return COACH_STYLES[state.coachStyle] || COACH_STYLES.calm; }
+function pickPreferredVoice(style) {
+  if (!("speechSynthesis" in window) || style.id !== "sergeant") return null;
+  const voices = speechSynthesis.getVoices();
+  const preferred = ["Daniel", "Fred", "David", "Google UK English Male", "Microsoft David", "Male"];
+  return voices.find(v => preferred.some(n => v.name.includes(n))) || null;
+}
 function speak(text) {
   if (!state.voiceEnabled || !("speechSynthesis" in window)) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  u.rate = 1.0;
+  const style = coachStyle();
+  u.rate = style.rate; u.pitch = style.pitch;
+  const voice = pickPreferredVoice(style);
+  if (voice) u.voice = voice;
   speechSynthesis.speak(u);
 }
 let beepCtx = null;
@@ -387,20 +430,158 @@ function formVideoSearchUrl(exerciseName) {
   const q = encodeURIComponent(exerciseName + " proper form tutorial");
   return `https://www.youtube.com/results?search_query=${q}`;
 }
+
+// Bodyweight-only variation ladders (easy -> advanced) for the movement families requested,
+// sourced from fitnessprogramer.com/101-calisthenics-exercises and trimmed to drop anything
+// needing bands/weights, to stay consistent with this app's bodyweight-only scope.
+const EXERCISE_GROUPS = [
+  {
+    name: "Push-up and Variations", icon: "💪",
+    items: [
+      { name: "Wall Push-up", level: "beginner", cue: "Stand arm's length from a wall, hands flat, bend your elbows to bring your chest toward it — the gentlest starting point." },
+      { name: "Kneeling Push-up", level: "beginner", cue: "Knees down, straight line from knees to head, lower your chest to the floor." },
+      { name: "Incline Push-up", level: "beginner", cue: "Hands on a step or sturdy chair — an easier angle than the floor." },
+      { name: "Standard Push-up", level: "standard", cue: "Hands under shoulders, straight line head to heels." },
+      { name: "Diamond Push-up", level: "standard", cue: "Hands close together under your chest, thumbs and fingers touching — heavy on the triceps." },
+      { name: "Archer Push-up", level: "advanced", cue: "Shift your weight side to side as you lower — one arm bends while the other stays straight." },
+      { name: "Single Arm Push-up", level: "advanced", cue: "One hand behind your back, feet wide for balance — a serious strength move." },
+      { name: "Cross Arm Push-up", level: "advanced", cue: "Hands crossed over each other under your chest — tests balance as much as strength." },
+    ],
+  },
+  {
+    name: "Lunge and Variations", icon: "🚶",
+    items: [
+      { name: "Reverse Lunge", level: "beginner", cue: "Step backward instead of forward — softer on the front knee, a great starting variation." },
+      { name: "Walking Lunge", level: "beginner", cue: "Step forward into a lunge, then bring the back foot through into the next one — keep moving forward." },
+      { name: "Side Lunge", level: "standard", cue: "Step out to the side and sit back into the bent leg — the other leg stays straight." },
+      { name: "Lunge Knee Lift", level: "standard", cue: "From the bottom of a lunge, drive the back knee up to hip height as you stand — tests balance." },
+      { name: "High Knee Lunges", level: "advanced", cue: "Lunge forward, then explosively drive the back knee up into a high knee — quick and powerful." },
+    ],
+  },
+  {
+    name: "Bulgarian Split Squats and Variations", icon: "🦵",
+    items: [
+      { name: "Split Squat", level: "beginner", cue: "Both feet on the ground, one forward one back — build single-leg strength before elevating the rear foot." },
+      { name: "Bulgarian Split Squat", level: "standard", cue: "Rear foot up on a sturdy chair or step, front thigh lowers to parallel." },
+      { name: "ATG Split Squat", level: "standard", cue: "\"Ass to grass\" split squat — sink as deep as your mobility allows, controlled the whole way." },
+      { name: "Split Squat Jump", level: "advanced", cue: "From a split stance, jump and switch legs in the air, landing softly back into the lunge." },
+      { name: "Supported Pistol Squat", level: "advanced", cue: "Single-leg squat, holding something sturdy for balance as you build the strength." },
+      { name: "Shrimp Squat", level: "advanced", cue: "Hold your back foot behind you, squat down on the standing leg until your back knee taps the floor." },
+    ],
+  },
+  {
+    name: "Bodyweight Squat and Variations", icon: "🏋️",
+    items: [
+      { name: "Bodyweight Squat", level: "beginner", cue: "Feet shoulder-width, chest up, knees track over your toes." },
+      { name: "Bodyweight Box Squat", level: "beginner", cue: "Squat down to lightly tap a chair or step behind you, then stand back up — great for depth and control." },
+      { name: "Bodyweight Sumo Squat", level: "standard", cue: "Wide stance, toes turned out — sit straight down between your knees." },
+      { name: "Curtsy Squat", level: "standard", cue: "Step one leg diagonally behind the other into a curtsy, then squat down." },
+      { name: "Cossack Squat", level: "advanced", cue: "Wide stance, shift your weight into one bent leg while the other stays straight out to the side." },
+      { name: "Jump Squat", level: "advanced", cue: "Explode up into a jump from the bottom of the squat, land soft and go straight into the next rep." },
+    ],
+  },
+  {
+    name: "Glute Bridge and Variations", icon: "🌉",
+    items: [
+      { name: "Pelvic Tilt", level: "beginner", cue: "Lying down, flatten your lower back into the floor by tilting your hips — a gentle warm-up for the glutes and core." },
+      { name: "Glute Bridge", level: "beginner", cue: "Feet hip-width, squeeze your glutes at the top, don't overarch your lower back." },
+      { name: "Single Leg Bridge", level: "standard", cue: "One leg extended straight out — keep your hips level, don't let them dip." },
+      { name: "Bridge Hip Abduction", level: "standard", cue: "Hold the bridge up, gently open and close your knees against light resistance." },
+      { name: "Hip Thrust", level: "advanced", cue: "Shoulders on a couch or low step, hips fully extended at the top for a bigger range of motion." },
+      { name: "Frog Pump", level: "advanced", cue: "Feet together, knees wide, small fast pulses at the top." },
+    ],
+  },
+  {
+    name: "Planche Push-up and Variations", icon: "🤸",
+    note: "A genuine strength skill built over months of consistent practice, not one workout — work through these in order and don't skip steps.",
+    items: [
+      { name: "High Plank", level: "beginner", cue: "Straight line head to heels, hands under shoulders — the foundation for every planche progression." },
+      { name: "Plank Arm and Leg Lift", level: "beginner", cue: "From a high plank, lift one arm and the opposite leg — builds the core stability the planche needs." },
+      { name: "Forearm Push-up", level: "standard", cue: "Push-up performed from your forearms — builds pressing strength without full wrist load yet." },
+      { name: "Frog Stand", level: "standard", cue: "A basic hand-balance: knees resting on your elbows, weight shifted forward onto your hands." },
+      { name: "Lean Planche", level: "advanced", cue: "Hands on the floor, lean your shoulders forward past your wrists, feet still down — builds wrist and shoulder strength." },
+      { name: "Straddle Planche", level: "advanced", cue: "Legs straight and spread wide, held parallel to the floor — a serious strength skill." },
+      { name: "Full Planche", level: "advanced", cue: "Legs straight and together, hovering parallel to the floor — an elite-level goal built over a long progression." },
+    ],
+  },
+  {
+    name: "Dragon Flag and Variations", icon: "🐉",
+    note: "Another genuine strength skill built up over time — master the hollow hold and leg raise stages before attempting the full lift.",
+    items: [
+      { name: "Hollow Hold", level: "beginner", cue: "Lower back pressed to the floor, arms and legs lifted slightly — the core tension every dragon flag needs." },
+      { name: "Lying Knee Raise", level: "beginner", cue: "Lying on your back, bring your knees toward your chest with control, then lower slowly." },
+      { name: "Leg Raise", level: "standard", cue: "Legs straight, lower them slowly toward the floor without your lower back arching up." },
+      { name: "Scissor Kick", level: "standard", cue: "Legs straight, small controlled up-and-down scissor motion, core braced the whole time." },
+      { name: "High Leg Raise", level: "advanced", cue: "Legs raised well past vertical, hips lifting off the floor — right at the edge of a dragon flag." },
+      { name: "Dragon Flag", level: "advanced", cue: "Shoulders as the only pivot point, body lowers as one straight line with total control." },
+    ],
+  },
+  {
+    name: "L-sit", icon: "🧘",
+    note: "Builds real core and shoulder strength — start with the tuck version and only extend the legs as it feels solid.",
+    items: [
+      { name: "Tuck L-sit", level: "standard", cue: "Knees pulled to your chest, feet off the floor, push down through straight arms." },
+      { name: "Single-Leg L-sit", level: "advanced", cue: "One leg extended straight out, the other stays tucked in." },
+      { name: "Full L-sit", level: "advanced", cue: "Both legs extended straight out in front, held parallel to the floor." },
+    ],
+  },
+];
+const LEVEL_LABELS = { beginner: "Beginner", standard: "Standard", advanced: "Advanced" };
+
+// Flat EXERCISES ids already covered by an EXERCISE_GROUPS family above -- skipped in the
+// "Other Exercises" section below so each move only appears once in the guide.
+const GROUPED_EXERCISE_IDS = new Set(["pushups", "lunges", "squats", "gluteBridges"]);
+
+function formGuideRow(name, icon, level, cue) {
+  const row = document.createElement("div");
+  row.className = "form-guide-item";
+  const levelBadge = level ? `<span class="fg-level ${level}">${LEVEL_LABELS[level]}</span>` : "";
+  row.innerHTML = `<div class="fg-icon">${icon}</div>
+    <div class="fg-body"><div class="fg-name">${name} ${levelBadge}</div><div class="fg-cue">${cue}</div></div>
+    <a class="fg-link" href="${formVideoSearchUrl(name)}" target="_blank" rel="noopener">▶ Watch form</a>`;
+  return row;
+}
+
 function renderFormGuide() {
   const wrap = document.getElementById("formGuideList");
   wrap.innerHTML = "";
-  Object.values(EXERCISES)
-    .slice()
+
+  const groupsWrap = document.createElement("div");
+  EXERCISE_GROUPS.forEach(group => {
+    const gEl = document.createElement("div");
+    gEl.className = "fg-group";
+    const head = document.createElement("div");
+    head.className = "fg-group-head";
+    head.innerHTML = `<span class="fg-group-icon">${group.icon}</span><span>${group.name}</span>`;
+    gEl.appendChild(head);
+    if (group.note) {
+      const note = document.createElement("div");
+      note.className = "fg-group-note";
+      note.textContent = group.note;
+      gEl.appendChild(note);
+    }
+    const list = document.createElement("div");
+    list.style.display = "flex"; list.style.flexDirection = "column"; list.style.gap = "8px";
+    group.items.forEach(it => list.appendChild(formGuideRow(it.name, group.icon, it.level, it.cue)));
+    gEl.appendChild(list);
+    groupsWrap.appendChild(gEl);
+  });
+  wrap.appendChild(groupsWrap);
+
+  const otherHead = document.createElement("h2");
+  otherHead.className = "section-h";
+  otherHead.style.marginTop = "4px";
+  otherHead.textContent = "Other exercises";
+  wrap.appendChild(otherHead);
+
+  const otherList = document.createElement("div");
+  otherList.style.display = "flex"; otherList.style.flexDirection = "column"; otherList.style.gap = "10px";
+  Object.entries(EXERCISES)
+    .filter(([id]) => !GROUPED_EXERCISE_IDS.has(id))
+    .map(([, ex]) => ex)
     .sort((a, b) => a.name.localeCompare(b.name))
-    .forEach(ex => {
-      const row = document.createElement("div");
-      row.className = "form-guide-item";
-      row.innerHTML = `<div class="fg-icon">${ex.icon}</div>
-        <div class="fg-body"><div class="fg-name">${ex.name}</div><div class="fg-cue">${ex.cue}</div></div>
-        <a class="fg-link" href="${formVideoSearchUrl(ex.name)}" target="_blank" rel="noopener">▶ Watch form</a>`;
-      wrap.appendChild(row);
-    });
+    .forEach(ex => otherList.appendChild(formGuideRow(ex.name, ex.icon, null, ex.cue)));
+  wrap.appendChild(otherList);
 }
 document.getElementById("goFormGuideBtn").addEventListener("click", () => {
   renderFormGuide();
@@ -470,9 +651,10 @@ function startWorkout(routineId, intensityId) {
   };
   document.getElementById("workoutScreenTitle").textContent = routine.name;
   document.getElementById("voiceToggleBtn").textContent = state.voiceEnabled ? "🔊" : "🔇";
+  document.getElementById("coachStyleBtn").textContent = state.coachStyle === "sergeant" ? "📯" : "🎙️";
   document.getElementById("pauseBtn").textContent = "Pause";
   renderWorkoutStep();
-  speak("Get ready");
+  speak(coachStyle().prepare());
   show("screen-workout");
   acquireWakeLock();
   if (workoutTimer) clearInterval(workoutTimer);
@@ -539,20 +721,20 @@ function advanceWorkoutPhase() {
     workout.idx = 0;
     workout.phase = "work";
     workout.secondsLeft = workout.workSec;
-    speak(EXERCISES[seq[0]].name);
+    speak(coachStyle().exerciseStart(EXERCISES[seq[0]].name));
   } else if (workout.phase === "work") {
     if (workout.idx >= seq.length - 1) { finishWorkout(); return; }
     workout.phase = "rest";
     workout.secondsLeft = workout.restSec;
     beep(500, 0.18);
     const nid = seq[workout.idx + 1];
-    speak(`Rest. Next up: ${EXERCISES[nid].name}`);
+    speak(coachStyle().restStart(EXERCISES[nid].name));
   } else if (workout.phase === "rest") {
     workout.idx++;
     workout.phase = "work";
     workout.secondsLeft = workout.workSec;
     beep(900, 0.15);
-    speak(EXERCISES[seq[workout.idx]].name);
+    speak(coachStyle().exerciseStart(EXERCISES[seq[workout.idx]].name));
   }
   renderWorkoutStep();
 }
@@ -561,7 +743,7 @@ function finishWorkout() {
   clearInterval(workoutTimer);
   speechSynthesis.cancel();
   releaseWakeLock();
-  speak("Workout complete. Great job!");
+  speak(coachStyle().finish());
   state.sessionsCompleted++;
   state.totalSecondsTrained += workout.elapsedSeconds;
   touchStreak();
@@ -592,6 +774,12 @@ document.getElementById("voiceToggleBtn").addEventListener("click", () => {
   saveState();
   document.getElementById("voiceToggleBtn").textContent = state.voiceEnabled ? "🔊" : "🔇";
   if (!state.voiceEnabled) speechSynthesis.cancel();
+});
+document.getElementById("coachStyleBtn").addEventListener("click", () => {
+  state.coachStyle = state.coachStyle === "sergeant" ? "calm" : "sergeant";
+  saveState();
+  document.getElementById("coachStyleBtn").textContent = state.coachStyle === "sergeant" ? "📯" : "🎙️";
+  speak(state.coachStyle === "sergeant" ? "Drill sergeant mode! Let's move!" : "Calm coach mode.");
 });
 document.getElementById("doAgainBtn").addEventListener("click", () => {
   startWorkout(workout.routine.id, workout.intensity.id);
