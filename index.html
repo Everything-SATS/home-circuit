@@ -436,7 +436,7 @@ function formVideoSearchUrl(exerciseName) {
 // needing bands/weights, to stay consistent with this app's bodyweight-only scope.
 const EXERCISE_GROUPS = [
   {
-    name: "Push-up and Variations", icon: "💪",
+    id: "pushup", name: "Push-up and Variations", icon: "💪",
     items: [
       { name: "Wall Push-up", level: "beginner", cue: "Stand arm's length from a wall, hands flat, bend your elbows to bring your chest toward it — the gentlest starting point." },
       { name: "Kneeling Push-up", level: "beginner", cue: "Knees down, straight line from knees to head, lower your chest to the floor." },
@@ -449,7 +449,7 @@ const EXERCISE_GROUPS = [
     ],
   },
   {
-    name: "Lunge and Variations", icon: "🚶",
+    id: "lunge", name: "Lunge and Variations", icon: "🚶",
     items: [
       { name: "Reverse Lunge", level: "beginner", cue: "Step backward instead of forward — softer on the front knee, a great starting variation." },
       { name: "Walking Lunge", level: "beginner", cue: "Step forward into a lunge, then bring the back foot through into the next one — keep moving forward." },
@@ -459,7 +459,7 @@ const EXERCISE_GROUPS = [
     ],
   },
   {
-    name: "Bulgarian Split Squats and Variations", icon: "🦵",
+    id: "splitSquat", name: "Bulgarian Split Squats and Variations", icon: "🦵",
     items: [
       { name: "Split Squat", level: "beginner", cue: "Both feet on the ground, one forward one back — build single-leg strength before elevating the rear foot." },
       { name: "Bulgarian Split Squat", level: "standard", cue: "Rear foot up on a sturdy chair or step, front thigh lowers to parallel." },
@@ -470,7 +470,7 @@ const EXERCISE_GROUPS = [
     ],
   },
   {
-    name: "Bodyweight Squat and Variations", icon: "🏋️",
+    id: "squat", name: "Bodyweight Squat and Variations", icon: "🏋️",
     items: [
       { name: "Bodyweight Squat", level: "beginner", cue: "Feet shoulder-width, chest up, knees track over your toes." },
       { name: "Bodyweight Box Squat", level: "beginner", cue: "Squat down to lightly tap a chair or step behind you, then stand back up — great for depth and control." },
@@ -481,7 +481,7 @@ const EXERCISE_GROUPS = [
     ],
   },
   {
-    name: "Glute Bridge and Variations", icon: "🌉",
+    id: "gluteBridge", name: "Glute Bridge and Variations", icon: "🌉",
     items: [
       { name: "Pelvic Tilt", level: "beginner", cue: "Lying down, flatten your lower back into the floor by tilting your hips — a gentle warm-up for the glutes and core." },
       { name: "Glute Bridge", level: "beginner", cue: "Feet hip-width, squeeze your glutes at the top, don't overarch your lower back." },
@@ -531,6 +531,38 @@ const LEVEL_LABELS = { beginner: "Beginner", standard: "Standard", advanced: "Ad
 // Flat EXERCISES ids already covered by an EXERCISE_GROUPS family above -- skipped in the
 // "Other Exercises" section below so each move only appears once in the guide.
 const GROUPED_EXERCISE_IDS = new Set(["pushups", "lunges", "squats", "gluteBridges"]);
+
+// Maps a routine's flat exercise id to the pool of variations it can randomly draw from at
+// workout start. Lunges also draw from the Bulgarian Split Squat family (a close relative --
+// same single-leg movement pattern) for real variety, per request. Deliberately excludes the
+// Planche/Dragon Flag/L-sit skill progressions -- those are long-term practice goals in the
+// Form Guide, not something that should randomly land in the middle of a timed circuit.
+function groupItems(groupId) {
+  const group = EXERCISE_GROUPS.find(g => g.id === groupId);
+  return group ? group.items.map(it => ({ name: it.name, cue: it.cue, level: it.level, icon: group.icon })) : [];
+}
+const FAMILY_POOLS = {
+  pushups: groupItems("pushup"),
+  squats: groupItems("squat"),
+  lunges: groupItems("lunge").concat(groupItems("splitSquat")),
+  gluteBridges: groupItems("gluteBridge"),
+};
+// Which variation levels are in play for a given workout intensity -- "easier" keeps things
+// approachable, "harder" drops the easiest entries so an advanced session actually stays
+// challenging while still drawing from the full range of harder variations.
+const INTENSITY_LEVELS = {
+  easier: ["beginner", "standard"],
+  standard: ["beginner", "standard", "advanced"],
+  harder: ["standard", "advanced"],
+};
+function resolveExercise(id, intensityId) {
+  const pool = FAMILY_POOLS[id];
+  if (!pool || !pool.length) return EXERCISES[id];
+  const allowedLevels = INTENSITY_LEVELS[intensityId] || INTENSITY_LEVELS.standard;
+  const candidates = pool.filter(it => allowedLevels.includes(it.level));
+  const chosen = (candidates.length ? candidates : pool)[Math.floor(Math.random() * (candidates.length ? candidates.length : pool.length))];
+  return { name: chosen.name, icon: chosen.icon, cue: chosen.cue };
+}
 
 function formGuideRow(name, icon, level, cue) {
   const row = document.createElement("div");
@@ -643,8 +675,13 @@ function startWorkout(routineId, intensityId) {
   const intensity = INTENSITIES.find(iv => iv.id === intensityId);
   const workSec = Math.max(8, Math.round(routine.workSec * intensity.workMul));
   const restSec = Math.max(5, Math.round(routine.restSec * intensity.restMul));
+  // Resolved fresh every session: any slot with a variation pool (push-ups, squats, lunges,
+  // glute bridges) gets a random pick each time it's reached -- independently per occurrence,
+  // so a routine that repeats "squats" across two rounds can serve two different variations,
+  // filtered to what's appropriate for the chosen intensity.
+  const resolvedSequence = routine.sequence.map(id => resolveExercise(id, intensityId));
   workout = {
-    routine, intensity, workSec, restSec,
+    routine, intensity, workSec, restSec, resolvedSequence,
     idx: -1, // -1 = prepare phase
     phase: "prepare", secondsLeft: 5, paused: false,
     elapsedSeconds: 0,
@@ -661,42 +698,42 @@ function startWorkout(routineId, intensityId) {
   workoutTimer = setInterval(workoutTick, 1000);
 }
 
-function currentExerciseId() {
-  return workout.routine.sequence[Math.max(0, workout.idx)];
+function currentExercise() {
+  return workout.resolvedSequence[Math.max(0, workout.idx)];
 }
-function nextExerciseId() {
-  return workout.routine.sequence[workout.idx + 1];
+function nextExercise() {
+  return workout.resolvedSequence[workout.idx + 1];
 }
 
 function renderWorkoutStep() {
-  const total = workout.routine.sequence.length;
+  const total = workout.resolvedSequence.length;
   document.getElementById("workoutProgressLabel").textContent =
     workout.idx < 0 ? `Starting — ${total} exercises` : `Exercise ${Math.min(workout.idx + 1, total)} / ${total}`;
   const progressPct = workout.idx < 0 ? 0 : ((workout.idx + (workout.phase === "rest" ? 1 : 0)) / total) * 100;
   document.getElementById("workoutProgressFill").style.width = progressPct + "%";
 
   const tag = document.getElementById("phaseTag");
-  const ex = EXERCISES[currentExerciseId()];
+  const ex = currentExercise();
   if (workout.phase === "prepare") {
     tag.className = "phase-tag prepare"; tag.textContent = "Get ready";
     document.getElementById("wcIcon").textContent = "⏱️";
     document.getElementById("wcName").textContent = "Starting soon";
     document.getElementById("wcCue").textContent = "Find some space and get into position.";
-    document.getElementById("wcNext").textContent = `First up: ${EXERCISES[workout.routine.sequence[0]].name}`;
+    document.getElementById("wcNext").textContent = `First up: ${workout.resolvedSequence[0].name}`;
   } else if (workout.phase === "work") {
     tag.className = "phase-tag work"; tag.textContent = "Work";
     document.getElementById("wcIcon").textContent = ex.icon;
     document.getElementById("wcName").textContent = ex.name;
     document.getElementById("wcCue").textContent = ex.cue;
-    const nid = nextExerciseId();
-    document.getElementById("wcNext").textContent = nid ? `Up next: ${EXERCISES[nid].name}` : "Last exercise!";
+    const nex = nextExercise();
+    document.getElementById("wcNext").textContent = nex ? `Up next: ${nex.name}` : "Last exercise!";
   } else if (workout.phase === "rest") {
     tag.className = "phase-tag rest"; tag.textContent = "Rest";
     document.getElementById("wcIcon").textContent = "😮‍💨";
     document.getElementById("wcName").textContent = "Rest";
     document.getElementById("wcCue").textContent = "Shake it out, breathe, get ready to go again.";
-    const nid = nextExerciseId();
-    document.getElementById("wcNext").textContent = nid ? `Up next: ${EXERCISES[nid].name}` : "Almost done!";
+    const nex = nextExercise();
+    document.getElementById("wcNext").textContent = nex ? `Up next: ${nex.name}` : "Almost done!";
   }
   document.getElementById("wcTimer").textContent = workout.secondsLeft;
 }
@@ -716,25 +753,24 @@ function workoutTick() {
 }
 
 function advanceWorkoutPhase() {
-  const seq = workout.routine.sequence;
+  const seq = workout.resolvedSequence;
   if (workout.phase === "prepare") {
     workout.idx = 0;
     workout.phase = "work";
     workout.secondsLeft = workout.workSec;
-    speak(coachStyle().exerciseStart(EXERCISES[seq[0]].name));
+    speak(coachStyle().exerciseStart(seq[0].name));
   } else if (workout.phase === "work") {
     if (workout.idx >= seq.length - 1) { finishWorkout(); return; }
     workout.phase = "rest";
     workout.secondsLeft = workout.restSec;
     beep(500, 0.18);
-    const nid = seq[workout.idx + 1];
-    speak(coachStyle().restStart(EXERCISES[nid].name));
+    speak(coachStyle().restStart(seq[workout.idx + 1].name));
   } else if (workout.phase === "rest") {
     workout.idx++;
     workout.phase = "work";
     workout.secondsLeft = workout.workSec;
     beep(900, 0.15);
-    speak(coachStyle().exerciseStart(EXERCISES[seq[workout.idx]].name));
+    speak(coachStyle().exerciseStart(seq[workout.idx].name));
   }
   renderWorkoutStep();
 }
@@ -754,7 +790,7 @@ function finishWorkout() {
   document.getElementById("compTitle").textContent = "Workout complete!";
   document.getElementById("compTime").textContent = `${mins} min`;
   document.getElementById("compSub").textContent =
-    `You finished ${workout.routine.sequence.length} exercises in ${workout.routine.name}. Nice work!`;
+    `You finished ${workout.resolvedSequence.length} exercises in ${workout.routine.name}. Nice work!`;
   show("screen-complete");
 }
 
