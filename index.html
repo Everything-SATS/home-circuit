@@ -1288,6 +1288,13 @@ function workoutTick() {
 
   if (workout.phase === "work") {
     const elapsedInExercise = workout.workSec - workout.secondsLeft;
+    // Delayed 4s after the section actually starts, so it doesn't collide with the move-name
+    // callout that already landed just before the switch.
+    if (!workout.exerciseStartAnnounced && elapsedInExercise === 4) {
+      workout.exerciseStartAnnounced = true;
+      const seq = workout.resolvedSequence;
+      speakCue("exerciseStart", coachStyle().exerciseStart(seq[workout.idx].name));
+    }
     // Fires once per exercise, the first tick past the 35%-elapsed mark -- skipped
     // entirely on exercises too short for a distinct "still going" cue to make sense.
     if (!workout.midMotivated && workout.workSec >= 15 && elapsedInExercise / workout.workSec >= MID_ACTIVITY_FRACTION) {
@@ -1317,8 +1324,8 @@ function advanceWorkoutPhase() {
     workout.secondsLeft = workout.workSec;
     workout.midMotivated = false;
     workout.tenSecWarned = false;
+    workout.exerciseStartAnnounced = false;
     musicMode = "work";
-    speakCue("exerciseStart", coachStyle().exerciseStart(seq[0].name));
   } else if (workout.phase === "work") {
     if (workout.idx >= seq.length - 1) { finishWorkout(); return; }
     workout.phase = "rest";
@@ -1333,9 +1340,9 @@ function advanceWorkoutPhase() {
     workout.secondsLeft = workout.workSec;
     workout.midMotivated = false;
     workout.tenSecWarned = false;
+    workout.exerciseStartAnnounced = false;
     musicMode = "work"; // back to the banger track, resuming where it left off
     beep(900, 0.15);
-    speakCue("exerciseStart", coachStyle().exerciseStart(seq[workout.idx].name));
   }
   renderWorkoutStep();
 }
