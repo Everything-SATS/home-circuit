@@ -405,7 +405,7 @@
   <div id="screen-voice-recorder" class="screen">
     <div class="back-row"><button class="back-btn" onclick="goHome()">← Back</button><div class="screen-title">Record My Drill Sergeant Voice</div></div>
     <p style="font-size:0.8rem;color:var(--ink-soft);margin:-4px 0 16px;">Record yourself reading each line below (or your own version of it — the words don't have to match exactly).
-      Once you save your first recording, "Drill Sergeant" voice switches to using YOUR voice instead of the robotic one, and becomes the default. Stays only on this device — nothing is uploaded anywhere.</p>
+      Once you save your first recording, the header voice button switches to "My Voice" 🎤 — your own separate profile alongside William's built-in voice 📯. Yours stays only on this device and never overwrites William's. Nothing is uploaded anywhere.</p>
     <div id="voiceClipList"></div>
     <div class="vc-controls" style="margin-top:6px;">
       <button class="vc-btn" id="exportVoiceBtn">⬇️ Export Voice Pack</button>
@@ -428,7 +428,7 @@
     <div class="back-row"><button class="back-btn" id="quitWorkoutBtn">← Quit</button><div class="screen-title" id="workoutScreenTitle"></div>
       <button class="back-btn" id="musicToggleBtn" style="margin-left:auto;" title="Toggle background music">🎵</button>
       <button class="back-btn" id="genderToggleBtn" title="Switch figure">🧑</button>
-      <button class="back-btn" id="coachStyleBtn" title="Switch coach voice style">🎙️</button>
+      <button class="back-btn" id="coachStyleBtn" title="Voice: William's Voice (tap to switch)">📯</button>
       <button class="back-btn" id="voiceToggleBtn">🔊</button>
     </div>
     <div class="workout-progress-label" id="workoutProgressLabel"></div>
@@ -548,14 +548,25 @@ const INTENSITIES = [
 /* ============================== STATE / PERSISTENCE ============================== */
 const STORE_KEY = "homecircuit_state_v1";
 function defaultState() {
-  return { streak: 0, lastPlayDate: null, sessionsCompleted: 0, totalSecondsTrained: 0, voiceEnabled: true, coachStyle: "calm", figureGender: "female", musicEnabled: true };
+  // voiceProfile picks the AUDIO SOURCE: "builtin" (Will's shipped voice -- the default for
+  // every fresh visitor), "own" (this device's personal recordings), or "calm" (robotic TTS,
+  // no drill-sergeant character at all). "own" never touches or overwrites the "builtin" files --
+  // they live as separate static assets in the repo, not in this visitor's IndexedDB.
+  return { streak: 0, lastPlayDate: null, sessionsCompleted: 0, totalSecondsTrained: 0, voiceEnabled: true, voiceProfile: "builtin", figureGender: "female", musicEnabled: true };
 }
 let state = loadState();
 function loadState() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return defaultState();
-    return Object.assign(defaultState(), JSON.parse(raw));
+    const parsed = JSON.parse(raw);
+    // Migrate the old binary coachStyle field (pre-three-tier-voice) onto voiceProfile: anyone
+    // who'd switched to "sergeant" was doing so specifically to hear their own recordings, so
+    // that maps to "own"; explicit "calm" carries over as-is; anything else keeps the new default.
+    if (parsed.voiceProfile === undefined && parsed.coachStyle !== undefined) {
+      parsed.voiceProfile = parsed.coachStyle === "sergeant" ? "own" : "calm";
+    }
+    return Object.assign(defaultState(), parsed);
   } catch (e) { return defaultState(); }
 }
 function saveState() {
@@ -613,7 +624,17 @@ const COACH_STYLES = {
     finish: () => "Workout complete! Outstanding effort, recruit! Dismissed!",
   },
 };
-function coachStyle() { return COACH_STYLES[state.coachStyle] || COACH_STYLES.calm; }
+// Both recorded-voice profiles ("builtin" and "own") use the sergeant wording/pitch -- they're
+// both drill-sergeant characters, just different audio sources. Only "calm" gets the calm text.
+function coachStyle() { return state.voiceProfile === "calm" ? COACH_STYLES.calm : COACH_STYLES.sergeant; }
+// Cue ids that shipped as part of William's built-in voice pack -- not every cue was recorded
+// (midActivity/tenSecondsLeft are TTS-only for now), so this list is the source of truth for
+// which ones have a real audio file at voices/builtin/<cueId>.mp3.
+const BUILTIN_VOICE_CUES = new Set(["prepare", "exerciseStart", "restStart", "finish"]);
+function playBuiltinClip(cueId) {
+  const audio = new Audio(`voices/builtin/${cueId}.mp3`);
+  audio.play().catch(() => {});
+}
 function pickPreferredVoice(style) {
   if (!("speechSynthesis" in window) || style.id !== "sergeant") return null;
   const voices = speechSynthesis.getVoices();
@@ -1216,7 +1237,7 @@ function startWorkout(routineId, intensityId) {
   };
   document.getElementById("workoutScreenTitle").textContent = routine.name;
   document.getElementById("voiceToggleBtn").textContent = state.voiceEnabled ? "🔊" : "🔇";
-  document.getElementById("coachStyleBtn").textContent = state.coachStyle === "sergeant" ? "📯" : "🎙️";
+  updateCoachStyleBtn();
   document.getElementById("genderToggleBtn").textContent = state.figureGender === "female" ? "🧑" : "🧔";
   document.getElementById("musicToggleBtn").textContent = state.musicEnabled ? "🎵" : "🔇";
   document.getElementById("pauseBtn").textContent = "Pause";
@@ -1395,11 +1416,24 @@ document.getElementById("voiceToggleBtn").addEventListener("click", () => {
   document.getElementById("voiceToggleBtn").textContent = state.voiceEnabled ? "🔊" : "🔇";
   if (!state.voiceEnabled) speechSynthesis.cancel();
 });
+// Three isolated, independently selectable voice profiles -- not a toggle. Cycles
+// calm -> William's Voice (builtin) -> My Voice (own) -> back to calm.
+const VOICE_PROFILES = {
+  calm:    { icon: "🎙️", label: "Calm coach mode." },
+  builtin: { icon: "📯", label: "William's Voice! Let's go!" },
+  own:     { icon: "🎤", label: "My Voice mode." },
+};
+const VOICE_PROFILE_ORDER = ["calm", "builtin", "own"];
+function updateCoachStyleBtn() {
+  document.getElementById("coachStyleBtn").textContent = VOICE_PROFILES[state.voiceProfile].icon;
+  document.getElementById("coachStyleBtn").title = `Voice: ${state.voiceProfile === "builtin" ? "William's Voice" : state.voiceProfile === "own" ? "My Voice" : "Calm"} (tap to switch)`;
+}
 document.getElementById("coachStyleBtn").addEventListener("click", () => {
-  state.coachStyle = state.coachStyle === "sergeant" ? "calm" : "sergeant";
+  const next = VOICE_PROFILE_ORDER[(VOICE_PROFILE_ORDER.indexOf(state.voiceProfile) + 1) % VOICE_PROFILE_ORDER.length];
+  state.voiceProfile = next;
   saveState();
-  document.getElementById("coachStyleBtn").textContent = state.coachStyle === "sergeant" ? "📯" : "🎙️";
-  speak(state.coachStyle === "sergeant" ? "Drill sergeant mode! Let's move!" : "Calm coach mode.");
+  updateCoachStyleBtn();
+  speak(VOICE_PROFILES[next].label); // always plain TTS for the mode-switch announcement itself
 });
 document.getElementById("genderToggleBtn").addEventListener("click", () => {
   state.figureGender = state.figureGender === "female" ? "male" : "female";
@@ -1506,10 +1540,11 @@ async function toggleRecording(cueId) {
     const blobs = [...existing, blob];
     await voiceDbPut({ id: cueId, blobs, savedAt: Date.now() });
     voiceClips[cueId] = blobs;
-    // First-ever save switches the default coach style to sergeant, per request --
-    // recordings only make sense being heard once they're actually the active voice.
-    if (state.coachStyle !== "sergeant") {
-      state.coachStyle = "sergeant";
+    // First-ever save switches to the "My Voice" profile, per request -- recordings only make
+    // sense being heard once they're actually the active voice. Never touches William's builtin
+    // tier, which lives entirely as static files, not in this device's IndexedDB.
+    if (state.voiceProfile !== "own") {
+      state.voiceProfile = "own";
       saveState();
     }
     renderVoiceRecorderScreen();
@@ -1654,8 +1689,8 @@ async function importVoicePack(file) {
     voiceClips[id] = merged;
     imported += newBlobs.length;
   }
-  if (imported > 0 && state.coachStyle !== "sergeant") {
-    state.coachStyle = "sergeant";
+  if (imported > 0 && state.voiceProfile !== "own") {
+    state.voiceProfile = "own";
     saveState();
   }
   renderVoiceRecorderScreen();
@@ -1671,13 +1706,18 @@ document.getElementById("importVoiceFile").addEventListener("change", (e) => {
   e.target.value = ""; // allow re-importing the same filename later
 });
 
-// Routes every coach cue through here: plays the user's own recording when sergeant mode is
-// active and a clip exists for this specific cue, otherwise falls back to speechSynthesis
-// exactly as before (covers calm mode always, and any cue not yet recorded).
+// Routes every coach cue through the three isolated voice tiers, in priority order:
+// "own" (this device's personal recordings) -> "builtin" (William's shipped voice) -> TTS.
+// "calm" profile skips straight to TTS. Each tier is fully independent -- a visitor on "own"
+// with no recording yet for this specific cue still hears Will, not silence or a TTS gap.
 function speakCue(cueId, ttsText) {
   if (!state.voiceEnabled) return;
-  if (state.coachStyle === "sergeant" && voiceClips[cueId]) {
+  if (state.voiceProfile === "own" && voiceClips[cueId]) {
     playClip(cueId);
+    return;
+  }
+  if (state.voiceProfile !== "calm" && BUILTIN_VOICE_CUES.has(cueId)) {
+    playBuiltinClip(cueId);
     return;
   }
   speak(ttsText);
@@ -1695,7 +1735,7 @@ const MOVE_NAME_IDS = new Set([
   "plankShoulderTaps","legRaises","childsPose","quadStretch","hamstringStretch","chestOpener","deepBreathing",
 ]);
 function playMoveName(figureId) {
-  if (!state.voiceEnabled || state.coachStyle !== "sergeant" || !MOVE_NAME_IDS.has(figureId)) return;
+  if (!state.voiceEnabled || state.voiceProfile === "calm" || !MOVE_NAME_IDS.has(figureId)) return;
   const audio = new Audio(`voices/moves/${figureId}.mp3`);
   audio.volume = 1.0;
   ensureBeepCtx();
