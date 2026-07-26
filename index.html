@@ -1310,6 +1310,7 @@ function advanceWorkoutPhase() {
     workout.tenSecWarned = false;
     musicMode = "work";
     speakCue("exerciseStart", coachStyle().exerciseStart(seq[0].name));
+    playMoveName(seq[0].figureId);
   } else if (workout.phase === "work") {
     if (workout.idx >= seq.length - 1) { finishWorkout(); return; }
     workout.phase = "rest";
@@ -1326,6 +1327,7 @@ function advanceWorkoutPhase() {
     musicMode = "work"; // back to the banger track, resuming where it left off
     beep(900, 0.15);
     speakCue("exerciseStart", coachStyle().exerciseStart(seq[workout.idx].name));
+    playMoveName(seq[workout.idx].figureId); // fires right after the rest cue, well under 8s total
   }
   renderWorkoutStep();
 }
@@ -1664,6 +1666,25 @@ function speakCue(cueId, ttsText) {
     return;
   }
   speak(ttsText);
+}
+
+// Announces the actual move name in the built-in drill-sergeant voice, right after the
+// exerciseStart cue -- these are baked into the app itself (voices/moves/<figureId>.mp3),
+// not per-device recordings, so every visitor gets them without recording anything. Fires a
+// short beat after exerciseStart so the two don't talk over each other; both together land
+// comfortably inside 8 seconds (each move-name clip is well under 2s).
+const MOVE_NAME_IDS = new Set([
+  "armCircles","jumpingJacks","highKnees","torsoTwists","squats","pushups","lunges","plank",
+  "gluteBridges","superman","wallSit","sidePlank","tricepDips","calfRaises","mountainClimbers",
+  "burpees","squatJumps","starJumps","buttKicks","bicycleCrunches","russianTwists",
+  "plankShoulderTaps","legRaises","childsPose","quadStretch","hamstringStretch","chestOpener","deepBreathing",
+]);
+function playMoveName(figureId) {
+  if (!state.voiceEnabled || state.coachStyle !== "sergeant" || !MOVE_NAME_IDS.has(figureId)) return;
+  setTimeout(() => {
+    const audio = new Audio(`voices/moves/${figureId}.mp3`);
+    audio.play().catch(() => {}); // ignore playback errors (e.g. file missing) -- non-critical
+  }, 1000);
 }
 
 /* ============================== INIT ============================== */
