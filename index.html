@@ -1212,7 +1212,7 @@ function startWorkout(routineId, intensityId) {
     routine, intensity, workSec, restSec, resolvedSequence,
     idx: -1, // -1 = prepare phase
     phase: "prepare", secondsLeft: 5, paused: false,
-    elapsedSeconds: 0,
+    elapsedSeconds: 0, moveNameAnnounced: false,
   };
   document.getElementById("workoutScreenTitle").textContent = routine.name;
   document.getElementById("voiceToggleBtn").textContent = state.voiceEnabled ? "🔊" : "🔇";
@@ -1277,6 +1277,15 @@ function workoutTick() {
 
   if (workout.secondsLeft <= 3 && workout.secondsLeft > 0) beep(700, 0.12);
 
+  // Announce the upcoming move name 2s before the new section actually starts (during the
+  // countdown of "prepare" or "rest"), so it lands ahead of the work phase rather than after it.
+  if ((workout.phase === "prepare" || workout.phase === "rest") && !workout.moveNameAnnounced && workout.secondsLeft === 2) {
+    workout.moveNameAnnounced = true;
+    const seq = workout.resolvedSequence;
+    const upcoming = workout.phase === "prepare" ? seq[0] : seq[workout.idx + 1];
+    if (upcoming) playMoveName(upcoming.figureId);
+  }
+
   if (workout.phase === "work") {
     const elapsedInExercise = workout.workSec - workout.secondsLeft;
     // Fires once per exercise, the first tick past the 35%-elapsed mark -- skipped
@@ -1310,11 +1319,11 @@ function advanceWorkoutPhase() {
     workout.tenSecWarned = false;
     musicMode = "work";
     speakCue("exerciseStart", coachStyle().exerciseStart(seq[0].name));
-    playMoveName(seq[0].figureId);
   } else if (workout.phase === "work") {
     if (workout.idx >= seq.length - 1) { finishWorkout(); return; }
     workout.phase = "rest";
     workout.secondsLeft = workout.restSec;
+    workout.moveNameAnnounced = false;
     musicMode = "rest"; // switch to the chilled holding loop for the break
     beep(500, 0.18);
     speakCue("restStart", coachStyle().restStart(seq[workout.idx + 1].name));
@@ -1327,7 +1336,6 @@ function advanceWorkoutPhase() {
     musicMode = "work"; // back to the banger track, resuming where it left off
     beep(900, 0.15);
     speakCue("exerciseStart", coachStyle().exerciseStart(seq[workout.idx].name));
-    playMoveName(seq[workout.idx].figureId); // fires right after the rest cue, well under 8s total
   }
   renderWorkoutStep();
 }
@@ -1681,10 +1689,25 @@ const MOVE_NAME_IDS = new Set([
 ]);
 function playMoveName(figureId) {
   if (!state.voiceEnabled || state.coachStyle !== "sergeant" || !MOVE_NAME_IDS.has(figureId)) return;
-  setTimeout(() => {
-    const audio = new Audio(`voices/moves/${figureId}.mp3`);
-    audio.play().catch(() => {}); // ignore playback errors (e.g. file missing) -- non-critical
-  }, 1000);
+  const audio = new Audio(`voices/moves/${figureId}.mp3`);
+  audio.volume = 1.0;
+  ensureBeepCtx();
+  // Duck the background music and boost the clip itself above its raw recorded level --
+  // phone-mic takes are quieter than the synth music, so plain volume=1.0 wasn't cutting through.
+  const prevMusicGain = musicGainNode ? musicGainNode.gain.value : null;
+  if (musicGainNode) musicGainNode.gain.setTargetAtTime(0.15, beepCtx.currentTime, 0.05);
+  const restoreMusic = () => {
+    if (musicGainNode && prevMusicGain != null) musicGainNode.gain.setTargetAtTime(prevMusicGain, beepCtx.currentTime, 0.3);
+  };
+  try {
+    const source = beepCtx.createMediaElementSource(audio);
+    const boost = beepCtx.createGain();
+    boost.gain.value = 1.8;
+    source.connect(boost).connect(beepCtx.destination);
+  } catch (e) { /* fall back to plain element playback at volume=1.0 above */ }
+  audio.addEventListener("ended", restoreMusic);
+  audio.addEventListener("error", restoreMusic);
+  audio.play().catch(restoreMusic); // ignore playback errors (e.g. file missing) -- non-critical
 }
 
 /* ============================== INIT ============================== */
