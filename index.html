@@ -333,6 +333,9 @@
   .voice-clip-card .vc-status { font-size: 0.72rem; font-weight: 800; color: var(--ink-soft); }
   .voice-clip-card .vc-status.recorded { color: var(--good); }
   .voice-clip-card .vc-controls { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .voice-clip-card .vc-take { display: flex; align-items: center; gap: 8px; font-size: 0.78rem;
+    color: var(--ink-soft); padding: 6px 0; border-top: 1px solid var(--line); }
+  .voice-clip-card .vc-take span { flex: 1; }
   .vc-btn { border: 1px solid var(--line); background: var(--track); color: var(--ink); border-radius: 10px;
     padding: 9px 14px; font-weight: 800; font-size: 0.8rem; cursor: pointer; }
   .vc-btn.recording { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
@@ -1021,6 +1024,22 @@ function workoutTick() {
 
   if (workout.secondsLeft <= 3 && workout.secondsLeft > 0) beep(700, 0.12);
 
+  if (workout.phase === "work") {
+    const elapsedInExercise = workout.workSec - workout.secondsLeft;
+    // Fires once per exercise, the first tick past the 35%-elapsed mark -- skipped
+    // entirely on exercises too short for a distinct "still going" cue to make sense.
+    if (!workout.midMotivated && workout.workSec >= 15 && elapsedInExercise / workout.workSec >= MID_ACTIVITY_FRACTION) {
+      workout.midMotivated = true;
+      speakCue("midActivity", "Keep going!");
+    }
+    // Only for exercises with enough runway that "10 seconds to go" isn't just restating
+    // the start -- otherwise it'd overlap with the exerciseStart cue itself.
+    if (!workout.tenSecWarned && workout.workSec > 15 && workout.secondsLeft === 10) {
+      workout.tenSecWarned = true;
+      speakCue("tenSecondsLeft", "Ten seconds!");
+    }
+  }
+
   if (workout.secondsLeft <= 0) {
     advanceWorkoutPhase();
     return;
@@ -1034,6 +1053,8 @@ function advanceWorkoutPhase() {
     workout.idx = 0;
     workout.phase = "work";
     workout.secondsLeft = workout.workSec;
+    workout.midMotivated = false;
+    workout.tenSecWarned = false;
     speakCue("exerciseStart", coachStyle().exerciseStart(seq[0].name));
   } else if (workout.phase === "work") {
     if (workout.idx >= seq.length - 1) { finishWorkout(); return; }
@@ -1045,6 +1066,8 @@ function advanceWorkoutPhase() {
     workout.idx++;
     workout.phase = "work";
     workout.secondsLeft = workout.workSec;
+    workout.midMotivated = false;
+    workout.tenSecWarned = false;
     beep(900, 0.15);
     speakCue("exerciseStart", coachStyle().exerciseStart(seq[workout.idx].name));
   }
@@ -1105,22 +1128,28 @@ document.getElementById("doAgainBtn").addEventListener("click", () => {
 });
 
 /* ============================== VOICE RECORDER (own drill sergeant voice) ============================== */
-// Records real audio for the 4 fixed cue points (prepare/exerciseStart/restStart/finish) via
-// MediaRecorder, stored as Blobs in IndexedDB (device-local, same "nothing uploaded" model as
-// every other app in this family). Deliberately fixed generic phrases, not per-exercise --
-// a real recording can't do live text-to-speech of a name that hasn't been recorded, so this
-// trades that dynamic-name flexibility (which TTS still has, and remains the fallback) for a
-// real human voice on the 4 moments that matter most.
+// Records real audio for a fixed set of cue points via MediaRecorder, stored as Blobs in
+// IndexedDB (device-local, same "nothing uploaded" model as every other app in this family).
+// Deliberately fixed generic phrases, not per-exercise -- a real recording can't do live
+// text-to-speech of a name that hasn't been recorded, so this trades that dynamic-name
+// flexibility (which TTS still has, and remains the fallback) for a real human voice.
+// Each cue supports MULTIPLE takes -- one is picked at random each time that cue fires, so
+// it doesn't repeat the exact same line every rep.
 const VOICE_CUES = [
   { id: "prepare", label: "Get Ready", script: "Attention! On your feet! We start in five!" },
   { id: "exerciseStart", label: "Exercise Start", script: "Let's go! Move it, move it!" },
+  { id: "midActivity", label: "Halfway Motivator", script: "Keep pushing, you've got this! Don't slow down now!" },
+  { id: "tenSecondsLeft", label: "10 Seconds To Go", script: "Ten seconds! Dig deep, finish strong!" },
   { id: "restStart", label: "Rest", script: "Rest! Catch your breath, get ready to go again!" },
   { id: "finish", label: "Workout Complete", script: "Outstanding effort! Dismissed!" },
 ];
+// Fraction of the way through a work interval that triggers the midActivity cue -- fires once
+// per exercise, the first tick where elapsed/workSec crosses this threshold.
+const MID_ACTIVITY_FRACTION = 0.35;
 const VOICE_DB_NAME = "homeCircuitVoiceDB";
 const VOICE_STORE = "clips";
 let voiceDb = null;
-let voiceClips = {}; // cue id -> Blob, in-memory cache so playback never waits on IndexedDB
+let voiceClips = {}; // cue id -> Blob[], in-memory cache so playback never waits on IndexedDB
 
 function openVoiceDb() {
   return new Promise((resolve, reject) => {
@@ -1130,6 +1159,14 @@ function openVoiceDb() {
       if (!database.objectStoreNames.contains(VOICE_STORE)) database.createObjectStore(VOICE_STORE, { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function voiceDbGet(id) {
+  return new Promise((resolve, reject) => {
+    const tx = voiceDb.transaction(VOICE_STORE, "readonly");
+    const req = tx.objectStore(VOICE_STORE).get(id);
+    req.onsuccess = () => resolve(req.result || null);
     req.onerror = () => reject(req.error);
   });
 }
@@ -1158,14 +1195,14 @@ async function loadVoiceClips() {
     req.onerror = () => reject(req.error);
   });
   voiceClips = {};
-  all.forEach(c => { voiceClips[c.id] = c.blob; });
+  all.forEach(c => { voiceClips[c.id] = c.blobs || (c.blob ? [c.blob] : []); }); // c.blob: migrate old single-take records
 }
 
 let activeRecorder = null;
 let activeChunks = [];
 let activeStream = null;
 
-async function toggleRecording(cueId, btn) {
+async function toggleRecording(cueId) {
   if (activeRecorder && activeRecorder.state === "recording") {
     activeRecorder.stop();
     return;
@@ -1185,8 +1222,10 @@ async function toggleRecording(cueId, btn) {
     activeStream.getTracks().forEach(t => t.stop());
     activeStream = null;
     activeRecorder = null;
-    await voiceDbPut({ id: cueId, blob, savedAt: Date.now() });
-    voiceClips[cueId] = blob;
+    const existing = (await voiceDbGet(cueId))?.blobs || [];
+    const blobs = [...existing, blob];
+    await voiceDbPut({ id: cueId, blobs, savedAt: Date.now() });
+    voiceClips[cueId] = blobs;
     // First-ever save switches the default coach style to sergeant, per request --
     // recordings only make sense being heard once they're actually the active voice.
     if (state.coachStyle !== "sergeant") {
@@ -1198,18 +1237,32 @@ async function toggleRecording(cueId, btn) {
   activeRecorder.start();
   renderVoiceRecorderScreen();
 }
-function playClip(cueId) {
-  const blob = voiceClips[cueId];
+function playTake(cueId, takeIndex) {
+  const blob = voiceClips[cueId]?.[takeIndex];
   if (!blob) return;
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
   audio.addEventListener("ended", () => URL.revokeObjectURL(url));
   audio.play().catch(() => {});
 }
-async function deleteClip(cueId) {
+// Plays a random take for this cue (variety across reps) -- used during a real workout, as
+// opposed to playTake() which plays a specific take while reviewing recordings.
+function playClip(cueId) {
+  const takes = voiceClips[cueId];
+  if (!takes || takes.length === 0) return;
+  playTake(cueId, Math.floor(Math.random() * takes.length));
+}
+async function deleteTake(cueId, takeIndex) {
   if (!confirm("Delete this recording?")) return;
-  await voiceDbDelete(cueId);
-  delete voiceClips[cueId];
+  const takes = (voiceClips[cueId] || []).slice();
+  takes.splice(takeIndex, 1);
+  if (takes.length === 0) {
+    await voiceDbDelete(cueId);
+    delete voiceClips[cueId];
+  } else {
+    await voiceDbPut({ id: cueId, blobs: takes, savedAt: Date.now() });
+    voiceClips[cueId] = takes;
+  }
   renderVoiceRecorderScreen();
 }
 
@@ -1218,35 +1271,40 @@ function renderVoiceRecorderScreen() {
   list.innerHTML = "";
   const isRecording = activeRecorder && activeRecorder.state === "recording";
   VOICE_CUES.forEach(cue => {
-    const hasClip = !!voiceClips[cue.id];
+    const takes = voiceClips[cue.id] || [];
     const recordingThis = isRecording && activeRecorder._cueId === cue.id;
     const card = document.createElement("div");
     card.className = "voice-clip-card";
+    const takesHtml = takes.map((_, i) => `
+      <div class="vc-take">
+        <span>Take ${i + 1}</span>
+        <button class="vc-btn play" data-play="${cue.id}" data-take="${i}">▶️ Play</button>
+        <button class="vc-btn" data-delete="${cue.id}" data-take="${i}">🗑</button>
+      </div>`).join("");
     card.innerHTML = `
       <div class="vc-label">🎙️ ${cue.label}
-        <span class="vc-status ${hasClip ? "recorded" : ""}">${hasClip ? "✅ Recorded" : "Not recorded yet"}</span>
+        <span class="vc-status ${takes.length ? "recorded" : ""}">${takes.length ? `✅ ${takes.length} take${takes.length === 1 ? "" : "s"}` : "Not recorded yet"}</span>
       </div>
       <div class="vc-script">"${cue.script}"</div>
+      ${takesHtml}
       <div class="vc-controls">
         <button class="vc-btn ${recordingThis ? "recording" : ""}" data-record="${cue.id}">
-          ${recordingThis ? "⏹ Stop" : hasClip ? "🔴 Re-record" : "🔴 Record"}
+          ${recordingThis ? "⏹ Stop" : "🔴 Record Another Take"}
         </button>
-        <button class="vc-btn play" data-play="${cue.id}" ${hasClip ? "" : "disabled"}>▶️ Play</button>
-        ${hasClip ? `<button class="vc-btn" data-delete="${cue.id}">🗑 Delete</button>` : ""}
       </div>`;
     list.appendChild(card);
   });
   list.querySelectorAll("[data-record]").forEach(btn => {
     btn.addEventListener("click", () => {
       if (activeRecorder && activeRecorder.state === "recording") { activeRecorder.stop(); return; }
-      toggleRecording(btn.getAttribute("data-record"), btn);
+      toggleRecording(btn.getAttribute("data-record"));
     });
   });
   list.querySelectorAll("[data-play]").forEach(btn => {
-    btn.addEventListener("click", () => playClip(btn.getAttribute("data-play")));
+    btn.addEventListener("click", () => playTake(btn.getAttribute("data-play"), Number(btn.getAttribute("data-take"))));
   });
   list.querySelectorAll("[data-delete]").forEach(btn => {
-    btn.addEventListener("click", () => deleteClip(btn.getAttribute("data-delete")));
+    btn.addEventListener("click", () => deleteTake(btn.getAttribute("data-delete"), Number(btn.getAttribute("data-take"))));
   });
 }
 document.getElementById("goVoiceRecorderBtn").addEventListener("click", () => {
@@ -1272,14 +1330,14 @@ function base64ToBlob(base64, mime) {
   return new Blob([arr], { type: mime });
 }
 async function exportVoicePack() {
-  const ids = Object.keys(voiceClips);
+  const ids = Object.keys(voiceClips).filter(id => (voiceClips[id] || []).length > 0);
   if (ids.length === 0) { alert("Record at least one clip before exporting."); return; }
   const clips = {};
   for (const id of ids) {
-    const blob = voiceClips[id];
-    clips[id] = { mime: blob.type || "audio/webm", data: await blobToBase64(blob) };
+    const takes = voiceClips[id];
+    clips[id] = { mime: takes[0].type || "audio/webm", takes: await Promise.all(takes.map(blobToBase64)) };
   }
-  const pack = { app: "home-circuit-voice-pack", version: 1, exportedAt: new Date().toISOString(), clips };
+  const pack = { app: "home-circuit-voice-pack", version: 2, exportedAt: new Date().toISOString(), clips };
   const blob = new Blob([JSON.stringify(pack)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -1306,10 +1364,15 @@ async function importVoicePack(file) {
   let imported = 0;
   for (const [id, clip] of Object.entries(pack.clips)) {
     if (!validIds.has(id)) continue;
-    const blob = base64ToBlob(clip.data, clip.mime);
-    await voiceDbPut({ id, blob, savedAt: Date.now() });
-    voiceClips[id] = blob;
-    imported++;
+    // v1 files have a single "data" string; v2 has a "takes" array -- accept both, merge
+    // with (not replace) whatever takes already exist on this device.
+    const newBlobs = clip.takes ? clip.takes.map(b64 => base64ToBlob(b64, clip.mime))
+                                 : [base64ToBlob(clip.data, clip.mime)];
+    const existing = voiceClips[id] || [];
+    const merged = [...existing, ...newBlobs];
+    await voiceDbPut({ id, blobs: merged, savedAt: Date.now() });
+    voiceClips[id] = merged;
+    imported += newBlobs.length;
   }
   if (imported > 0 && state.coachStyle !== "sergeant") {
     state.coachStyle = "sergeant";
