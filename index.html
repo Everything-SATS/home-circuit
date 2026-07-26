@@ -404,6 +404,13 @@
     <p style="font-size:0.8rem;color:var(--ink-soft);margin:-4px 0 16px;">Record yourself reading each line below (or your own version of it — the words don't have to match exactly).
       Once you save your first recording, "Drill Sergeant" voice switches to using YOUR voice instead of the robotic one, and becomes the default. Stays only on this device — nothing is uploaded anywhere.</p>
     <div id="voiceClipList"></div>
+    <div class="vc-controls" style="margin-top:6px;">
+      <button class="vc-btn" id="exportVoiceBtn">⬇️ Export Voice Pack</button>
+      <button class="vc-btn" id="importVoiceBtn">⬆️ Import Voice Pack</button>
+      <input type="file" id="importVoiceFile" accept="application/json" style="display:none;">
+    </div>
+    <p style="font-size:0.74rem;color:var(--ink-soft);margin-top:10px;">Export downloads a small file with your recordings — carry it to another
+      device (AirDrop, email to yourself, your own cloud drive) and use Import there to get the same voice everywhere. Still nothing sent to any server.</p>
   </div>
 
   <!-- ===== Intensity picker ===== -->
@@ -1245,6 +1252,80 @@ function renderVoiceRecorderScreen() {
 document.getElementById("goVoiceRecorderBtn").addEventListener("click", () => {
   renderVoiceRecorderScreen();
   show("screen-voice-recorder");
+});
+
+// Export/import a "voice pack" -- no backend, no accounts: the recordings themselves travel
+// as a plain downloaded file the user carries between their own devices (AirDrop, email to
+// self, their own cloud drive). Same zero-server model as every other app in this family.
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result.split(",")[1]); // strip the data: URL prefix
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+function base64ToBlob(base64, mime) {
+  const bytes = atob(base64);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+async function exportVoicePack() {
+  const ids = Object.keys(voiceClips);
+  if (ids.length === 0) { alert("Record at least one clip before exporting."); return; }
+  const clips = {};
+  for (const id of ids) {
+    const blob = voiceClips[id];
+    clips[id] = { mime: blob.type || "audio/webm", data: await blobToBase64(blob) };
+  }
+  const pack = { app: "home-circuit-voice-pack", version: 1, exportedAt: new Date().toISOString(), clips };
+  const blob = new Blob([JSON.stringify(pack)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "home-circuit-voice-pack.json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+async function importVoicePack(file) {
+  let pack;
+  try {
+    pack = JSON.parse(await file.text());
+  } catch (e) {
+    alert("That doesn't look like a valid voice pack file.");
+    return;
+  }
+  if (!pack || pack.app !== "home-circuit-voice-pack" || !pack.clips) {
+    alert("That doesn't look like a Home Circuit voice pack file.");
+    return;
+  }
+  const validIds = new Set(VOICE_CUES.map(c => c.id));
+  let imported = 0;
+  for (const [id, clip] of Object.entries(pack.clips)) {
+    if (!validIds.has(id)) continue;
+    const blob = base64ToBlob(clip.data, clip.mime);
+    await voiceDbPut({ id, blob, savedAt: Date.now() });
+    voiceClips[id] = blob;
+    imported++;
+  }
+  if (imported > 0 && state.coachStyle !== "sergeant") {
+    state.coachStyle = "sergeant";
+    saveState();
+  }
+  renderVoiceRecorderScreen();
+  alert(`Imported ${imported} recording${imported === 1 ? "" : "s"}.`);
+}
+document.getElementById("exportVoiceBtn").addEventListener("click", exportVoicePack);
+document.getElementById("importVoiceBtn").addEventListener("click", () => {
+  document.getElementById("importVoiceFile").click();
+});
+document.getElementById("importVoiceFile").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (file) importVoicePack(file);
+  e.target.value = ""; // allow re-importing the same filename later
 });
 
 // Routes every coach cue through here: plays the user's own recording when sergeant mode is
