@@ -432,6 +432,7 @@
       <button class="back-btn" id="voiceToggleBtn">🔊</button>
     </div>
     <div class="workout-progress-label" id="workoutProgressLabel"></div>
+    <div class="workout-progress-label" id="nowPlayingLabel" style="font-size:0.7rem;opacity:0.75;margin-top:-4px;"></div>
     <div class="progress-track"><div class="fill" id="workoutProgressFill" style="width:0%"></div></div>
     <div class="workout-card">
       <div class="phase-tag" id="phaseTag">Get ready</div>
@@ -656,27 +657,76 @@ function beep(freq, dur) {
 // Uses a standard lookahead scheduler (setInterval polls slightly ahead of real time and
 // schedules exact-timed Web Audio events) rather than scheduling notes directly on a
 // setInterval tick -- setInterval alone drifts audibly over a multi-minute workout.
-const MUSIC_BPM = 126;
 const MUSIC_SCHEDULE_AHEAD_SEC = 0.1;
 const MUSIC_LOOKAHEAD_MS = 25;
 let musicGainNode = null;
 let musicTimer = null;
-let musicStep = 0;
 let musicNextStepTime = 0;
+let musicMode = "work"; // "work" (a full banger track) | "rest" (the chilled holding loop)
 
-function stepSeconds() { return 60 / MUSIC_BPM / 4; } // 16th note
+// Three full tracks, each with its own tempo/key/song shape -- one is picked at random per
+// workout (see startMusic()) and stays consistent through pauses/rests within that workout,
+// only re-rolling on the next "Start workout". Same song-structure idea for all three: quiet
+// intro -> full groove -> a rising buildup -> the drop (crash + big kick/bass + a melodic
+// lead line) -> a stripped-back breakdown for contrast -> buildup again -> second drop ->
+// loops back to intro.
+const SONGS = [
+  {
+    name: "Will's Absolute Banger!!", bpm: 126, bassRoot: 55.00, bassFifth: 82.41, // A1, E2
+    leadNotes: [220.00, 261.63, 329.63, 392.00], // A3 C4 E4 G4
+    structure: [
+      { name: "intro", bars: 4 }, { name: "groove", bars: 8 }, { name: "buildup", bars: 1 },
+      { name: "drop", bars: 8 }, { name: "breakdown", bars: 4 }, { name: "buildup", bars: 1 },
+      { name: "drop", bars: 8 },
+    ],
+  },
+  {
+    name: "Overdrive", bpm: 140, bassRoot: 73.42, bassFifth: 110.00, // D2, A2
+    leadNotes: [293.66, 349.23, 392.00, 440.00], // D4 F4 G4 A4
+    structure: [
+      { name: "intro", bars: 2 }, { name: "groove", bars: 6 }, { name: "buildup", bars: 1 },
+      { name: "drop", bars: 8 }, { name: "breakdown", bars: 2 }, { name: "buildup", bars: 1 },
+      { name: "drop", bars: 8 },
+    ],
+  },
+  {
+    name: "Groove", bpm: 118, bassRoot: 65.41, bassFifth: 98.00, // C2, G2
+    leadNotes: [261.63, 329.63, 392.00, 523.25], // C4 E4 G4 C5 (major, brighter)
+    structure: [
+      { name: "intro", bars: 4 }, { name: "groove", bars: 10 }, { name: "buildup", bars: 1 },
+      { name: "drop", bars: 6 }, { name: "breakdown", bars: 6 }, { name: "buildup", bars: 1 },
+      { name: "drop", bars: 6 },
+    ],
+  },
+];
+let currentSong = null;
+let bangerStep = 0, bangerBar = -1, bangerSectionIdx = 0;
+function bangerStepSeconds() { return 60 / currentSong.bpm / 4; } // 16th note
+function currentSection() { return currentSong.structure[bangerSectionIdx]; }
 
-function playKick(time) {
+// The calmer "holding" loop for rest periods between exercises -- no drums, just a slow
+// 2-chord pad with an occasional soft high sparkle, so rest actually feels like a breather
+// instead of the same high-energy track blaring through your break.
+const CHILL_BPM = 80;
+const CHILL_BAR_STEPS = 16;
+const CHILL_CHORDS = [
+  [220.00, 261.63, 329.63], // Am: A3 C4 E4
+  [174.61, 220.00, 261.63], // F: F3 A3 C4
+];
+let chillStep = 0;
+function chillStepSeconds() { return 60 / CHILL_BPM / 4; }
+
+function playKick(time, big) {
   const osc = beepCtx.createOscillator(), gain = beepCtx.createGain();
   osc.type = "sine";
-  osc.frequency.setValueAtTime(150, time);
-  osc.frequency.exponentialRampToValueAtTime(45, time + 0.15);
-  gain.gain.setValueAtTime(0.9, time);
-  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.18);
+  osc.frequency.setValueAtTime(big ? 170 : 150, time);
+  osc.frequency.exponentialRampToValueAtTime(big ? 40 : 45, time + (big ? 0.22 : 0.15));
+  gain.gain.setValueAtTime(big ? 1.0 : 0.9, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + (big ? 0.26 : 0.18));
   osc.connect(gain); gain.connect(musicGainNode);
-  osc.start(time); osc.stop(time + 0.2);
+  osc.start(time); osc.stop(time + (big ? 0.3 : 0.2));
 }
-function playHihat(time) {
+function playHihat(time, gainLevel) {
   const size = Math.floor(beepCtx.sampleRate * 0.05);
   const buffer = beepCtx.createBuffer(1, size, beepCtx.sampleRate);
   const data = buffer.getChannelData(0);
@@ -684,7 +734,7 @@ function playHihat(time) {
   const noise = beepCtx.createBufferSource(); noise.buffer = buffer;
   const hp = beepCtx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 7000;
   const gain = beepCtx.createGain();
-  gain.gain.setValueAtTime(0.22, time);
+  gain.gain.setValueAtTime(gainLevel, time);
   gain.gain.exponentialRampToValueAtTime(0.001, time + 0.04);
   noise.connect(hp); hp.connect(gain); gain.connect(musicGainNode);
   noise.start(time); noise.stop(time + 0.05);
@@ -702,24 +752,118 @@ function playClap(time) {
   noise.connect(bp); bp.connect(gain); gain.connect(musicGainNode);
   noise.start(time); noise.stop(time + 0.15);
 }
-function playBass(time, freq) {
+function playBass(time, freq, big) {
   const osc = beepCtx.createOscillator(), gain = beepCtx.createGain();
-  osc.type = "triangle"; osc.frequency.value = freq;
-  gain.gain.setValueAtTime(0.28, time);
-  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.22);
+  osc.type = "triangle"; osc.frequency.value = big ? freq / 2 : freq; // drop an octave for weight on the drop
+  gain.gain.setValueAtTime(big ? 0.4 : 0.28, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + (big ? 0.32 : 0.22));
   osc.connect(gain); gain.connect(musicGainNode);
-  osc.start(time); osc.stop(time + 0.25);
+  osc.start(time); osc.stop(time + (big ? 0.35 : 0.25));
 }
-function scheduleMusicStep(step, time) {
-  if (step % 4 === 0) { playKick(time); playBass(time, step % 8 === 0 ? 55.0 : 82.41); } // A1 / E2
-  if (step % 2 === 0) playHihat(time);
-  if (step === 4 || step === 12) playClap(time);
+function playCrash(time) {
+  const size = Math.floor(beepCtx.sampleRate * 0.6);
+  const buffer = beepCtx.createBuffer(1, size, beepCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < size; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / size);
+  const noise = beepCtx.createBufferSource(); noise.buffer = buffer;
+  const hp = beepCtx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 5000;
+  const gain = beepCtx.createGain();
+  gain.gain.setValueAtTime(0.35, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.6);
+  noise.connect(hp); hp.connect(gain); gain.connect(musicGainNode);
+  noise.start(time); noise.stop(time + 0.6);
+}
+function playRiser(startTime, duration) {
+  const osc = beepCtx.createOscillator(), gain = beepCtx.createGain();
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(200, startTime);
+  osc.frequency.exponentialRampToValueAtTime(1800, startTime + duration);
+  gain.gain.setValueAtTime(0.0001, startTime);
+  gain.gain.linearRampToValueAtTime(0.16, startTime + duration * 0.85);
+  gain.gain.linearRampToValueAtTime(0.0001, startTime + duration);
+  osc.connect(gain); gain.connect(musicGainNode);
+  osc.start(startTime); osc.stop(startTime + duration + 0.05);
+}
+function playLead(time, freq) {
+  const osc = beepCtx.createOscillator(), gain = beepCtx.createGain();
+  osc.type = "square"; osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.11, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.18);
+  osc.connect(gain); gain.connect(musicGainNode);
+  osc.start(time); osc.stop(time + 0.2);
+}
+function playPad(time, freqs, duration) {
+  freqs.forEach(f => {
+    const osc = beepCtx.createOscillator(), gain = beepCtx.createGain();
+    osc.type = "sine"; osc.frequency.value = f;
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.linearRampToValueAtTime(0.09, time + duration * 0.3);
+    gain.gain.linearRampToValueAtTime(0.0001, time + duration);
+    osc.connect(gain); gain.connect(musicGainNode);
+    osc.start(time); osc.stop(time + duration + 0.05);
+  });
+}
+function playSparkle(time) {
+  const osc = beepCtx.createOscillator(), gain = beepCtx.createGain();
+  osc.type = "triangle"; osc.frequency.value = 880 + Math.random() * 440;
+  gain.gain.setValueAtTime(0.05, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.5);
+  osc.connect(gain); gain.connect(musicGainNode);
+  osc.start(time); osc.stop(time + 0.55);
+}
+
+function scheduleBangerStep(step, time) {
+  if (step === 0) {
+    bangerBar++;
+    if (bangerBar >= currentSection().bars) {
+      bangerSectionIdx = (bangerSectionIdx + 1) % currentSong.structure.length;
+      bangerBar = 0;
+    }
+  }
+  const name = currentSection().name;
+  const bassFreq = step % 8 === 0 ? currentSong.bassRoot : currentSong.bassFifth;
+
+  if (name === "intro") {
+    if (step % 4 === 0) playBass(time, bassFreq, false);
+    if (step % 4 === 2) playHihat(time, 0.14);
+  } else if (name === "groove") {
+    if (step % 4 === 0) { playKick(time, false); playBass(time, bassFreq, false); }
+    if (step % 2 === 0) playHihat(time, 0.22);
+    if (step === 4 || step === 12) playClap(time);
+  } else if (name === "buildup") {
+    if (step % 4 === 0) playKick(time, false);
+    playHihat(time, 0.12 + (step / 16) * 0.35); // rising 16th-note roll
+    if (step === 0) playRiser(time, bangerStepSeconds() * 16 * currentSection().bars);
+  } else if (name === "drop") {
+    if (step % 4 === 0) { playKick(time, true); playBass(time, bassFreq, true); }
+    if (step % 2 === 0) playHihat(time, 0.24);
+    if (step === 4 || step === 12) playClap(time);
+    if (bangerBar === 0 && step === 0) playCrash(time);
+    if (step % 2 === 0) playLead(time, currentSong.leadNotes[(step / 2) % currentSong.leadNotes.length]);
+  } else if (name === "breakdown") {
+    if (step % 8 === 0) playBass(time, currentSong.bassRoot, false);
+    if (step === 8) playClap(time);
+    if (step % 4 === 0) playHihat(time, 0.1);
+  }
+}
+function scheduleChillStep(step, time) {
+  if (step % CHILL_BAR_STEPS === 0) {
+    const chordIdx = Math.floor(step / CHILL_BAR_STEPS) % CHILL_CHORDS.length;
+    playPad(time, CHILL_CHORDS[chordIdx], CHILL_BAR_STEPS * chillStepSeconds());
+  }
+  if (step % 8 === 4 && Math.random() < 0.35) playSparkle(time); // sparse, not every bar
 }
 function musicSchedulerLoop() {
   while (musicNextStepTime < beepCtx.currentTime + MUSIC_SCHEDULE_AHEAD_SEC) {
-    scheduleMusicStep(musicStep, musicNextStepTime);
-    musicNextStepTime += stepSeconds();
-    musicStep = (musicStep + 1) % 16;
+    if (musicMode === "rest") {
+      scheduleChillStep(chillStep, musicNextStepTime);
+      musicNextStepTime += chillStepSeconds();
+      chillStep = (chillStep + 1) % (CHILL_BAR_STEPS * CHILL_CHORDS.length);
+    } else {
+      scheduleBangerStep(bangerStep, musicNextStepTime);
+      musicNextStepTime += bangerStepSeconds();
+      bangerStep = (bangerStep + 1) % 16;
+    }
   }
 }
 function startMusic() {
@@ -729,13 +873,28 @@ function startMusic() {
     musicGainNode.gain.value = 0.5; // background level -- shouldn't compete with the voice cues
     musicGainNode.connect(beepCtx.destination);
   }
-  musicStep = 0;
+  // A fresh song (and fresh position within it) only on a genuinely new workout start --
+  // resuming from pause/rest keeps whatever position the current song was already at.
+  if (!currentSong || musicNextStepTime === 0) {
+    currentSong = SONGS[Math.floor(Math.random() * SONGS.length)];
+    bangerStep = 0; bangerBar = -1; bangerSectionIdx = 0;
+    chillStep = 0;
+    musicMode = "work";
+    const btn = document.getElementById("musicToggleBtn");
+    if (btn) btn.title = `Toggle background music (playing: ${currentSong.name})`;
+    const label = document.getElementById("nowPlayingLabel");
+    if (label) label.textContent = `🎵 ${currentSong.name}`;
+  }
   musicNextStepTime = beepCtx.currentTime + 0.05;
   musicSchedulerLoop();
   musicTimer = setInterval(musicSchedulerLoop, MUSIC_LOOKAHEAD_MS);
 }
 function stopMusic() {
   if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+}
+function resetMusicForNewWorkout() {
+  currentSong = null;
+  musicNextStepTime = 0;
 }
 
 /* ============================== HOME RENDER ============================== */
@@ -1065,6 +1224,7 @@ function startWorkout(routineId, intensityId) {
   speakCue("prepare", coachStyle().prepare());
   show("screen-workout");
   acquireWakeLock();
+  resetMusicForNewWorkout();
   startMusic();
   if (workoutTimer) clearInterval(workoutTimer);
   workoutTimer = setInterval(workoutTick, 1000);
@@ -1148,11 +1308,13 @@ function advanceWorkoutPhase() {
     workout.secondsLeft = workout.workSec;
     workout.midMotivated = false;
     workout.tenSecWarned = false;
+    musicMode = "work";
     speakCue("exerciseStart", coachStyle().exerciseStart(seq[0].name));
   } else if (workout.phase === "work") {
     if (workout.idx >= seq.length - 1) { finishWorkout(); return; }
     workout.phase = "rest";
     workout.secondsLeft = workout.restSec;
+    musicMode = "rest"; // switch to the chilled holding loop for the break
     beep(500, 0.18);
     speakCue("restStart", coachStyle().restStart(seq[workout.idx + 1].name));
   } else if (workout.phase === "rest") {
@@ -1161,6 +1323,7 @@ function advanceWorkoutPhase() {
     workout.secondsLeft = workout.workSec;
     workout.midMotivated = false;
     workout.tenSecWarned = false;
+    musicMode = "work"; // back to the banger track, resuming where it left off
     beep(900, 0.15);
     speakCue("exerciseStart", coachStyle().exerciseStart(seq[workout.idx].name));
   }
@@ -1199,7 +1362,12 @@ document.getElementById("musicToggleBtn").addEventListener("click", () => {
   state.musicEnabled = !state.musicEnabled;
   saveState();
   document.getElementById("musicToggleBtn").textContent = state.musicEnabled ? "🎵" : "🔇";
-  if (state.musicEnabled && !workout.paused) startMusic(); else stopMusic();
+  if (state.musicEnabled && !workout.paused) {
+    startMusic();
+  } else {
+    stopMusic();
+    document.getElementById("nowPlayingLabel").textContent = "";
+  }
 });
 document.getElementById("skipBtn").addEventListener("click", () => {
   advanceWorkoutPhase();
