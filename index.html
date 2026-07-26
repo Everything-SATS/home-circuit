@@ -326,6 +326,18 @@
   .result-hero .r-score { font-size: 2.2rem; font-weight: 900; color: var(--accent); margin: 6px 0; }
   .result-hero p { color: var(--ink-soft); font-size: 0.88rem; margin: 0; max-width: 420px; margin: 0 auto; }
 
+  .voice-clip-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px;
+    margin-bottom: 12px; }
+  .voice-clip-card .vc-label { font-weight: 800; font-size: 0.9rem; display: flex; align-items: center; gap: 7px; }
+  .voice-clip-card .vc-script { font-size: 0.82rem; color: var(--ink-soft); font-style: italic; margin: 4px 0 10px; }
+  .voice-clip-card .vc-status { font-size: 0.72rem; font-weight: 800; color: var(--ink-soft); }
+  .voice-clip-card .vc-status.recorded { color: var(--good); }
+  .voice-clip-card .vc-controls { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .vc-btn { border: 1px solid var(--line); background: var(--track); color: var(--ink); border-radius: 10px;
+    padding: 9px 14px; font-weight: 800; font-size: 0.8rem; cursor: pointer; }
+  .vc-btn.recording { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
+  .vc-btn.play { background: var(--good-soft); color: var(--good); }
+
   .form-guide-list { display: flex; flex-direction: column; gap: 10px; }
   .form-guide-item { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px;
     display: flex; gap: 12px; align-items: center; box-shadow: var(--shadow); }
@@ -370,6 +382,7 @@
     <div class="routine-grid" id="routineGrid"></div>
 
     <button class="ghost-btn" id="goFormGuideBtn" style="margin-top:18px;">📋 Exercise Form Guide</button>
+    <button class="ghost-btn" id="goVoiceRecorderBtn" style="margin-top:10px;">🎤 Record My Drill Sergeant Voice</button>
 
     <div class="disclaimer">
       💡 Bodyweight only — no equipment needed. Go at your own pace, use the easier variation of any move if you need
@@ -383,6 +396,14 @@
     <div class="back-row"><button class="back-btn" onclick="goHome()">← Back</button><div class="screen-title">Exercise Form Guide</div></div>
     <p style="font-size:0.8rem;color:var(--ink-soft);margin:-4px 0 16px;">Every move used in these workouts, with a quick cue and a link to real videos so you can check your form.</p>
     <div class="form-guide-list" id="formGuideList"></div>
+  </div>
+
+  <!-- ===== Voice recorder ===== -->
+  <div id="screen-voice-recorder" class="screen">
+    <div class="back-row"><button class="back-btn" onclick="goHome()">← Back</button><div class="screen-title">Record My Drill Sergeant Voice</div></div>
+    <p style="font-size:0.8rem;color:var(--ink-soft);margin:-4px 0 16px;">Record yourself reading each line below (or your own version of it — the words don't have to match exactly).
+      Once you save your first recording, "Drill Sergeant" voice switches to using YOUR voice instead of the robotic one, and becomes the default. Stays only on this device — nothing is uploaded anywhere.</p>
+    <div id="voiceClipList"></div>
   </div>
 
   <!-- ===== Intensity picker ===== -->
@@ -939,7 +960,7 @@ function startWorkout(routineId, intensityId) {
   document.getElementById("genderToggleBtn").textContent = state.figureGender === "female" ? "🧑" : "🧔";
   document.getElementById("pauseBtn").textContent = "Pause";
   renderWorkoutStep();
-  speak(coachStyle().prepare());
+  speakCue("prepare", coachStyle().prepare());
   show("screen-workout");
   acquireWakeLock();
   if (workoutTimer) clearInterval(workoutTimer);
@@ -1006,19 +1027,19 @@ function advanceWorkoutPhase() {
     workout.idx = 0;
     workout.phase = "work";
     workout.secondsLeft = workout.workSec;
-    speak(coachStyle().exerciseStart(seq[0].name));
+    speakCue("exerciseStart", coachStyle().exerciseStart(seq[0].name));
   } else if (workout.phase === "work") {
     if (workout.idx >= seq.length - 1) { finishWorkout(); return; }
     workout.phase = "rest";
     workout.secondsLeft = workout.restSec;
     beep(500, 0.18);
-    speak(coachStyle().restStart(seq[workout.idx + 1].name));
+    speakCue("restStart", coachStyle().restStart(seq[workout.idx + 1].name));
   } else if (workout.phase === "rest") {
     workout.idx++;
     workout.phase = "work";
     workout.secondsLeft = workout.workSec;
     beep(900, 0.15);
-    speak(coachStyle().exerciseStart(seq[workout.idx].name));
+    speakCue("exerciseStart", coachStyle().exerciseStart(seq[workout.idx].name));
   }
   renderWorkoutStep();
 }
@@ -1027,7 +1048,7 @@ function finishWorkout() {
   clearInterval(workoutTimer);
   speechSynthesis.cancel();
   releaseWakeLock();
-  speak(coachStyle().finish());
+  speakCue("finish", coachStyle().finish());
   state.sessionsCompleted++;
   state.totalSecondsTrained += workout.elapsedSeconds;
   touchStreak();
@@ -1076,9 +1097,172 @@ document.getElementById("doAgainBtn").addEventListener("click", () => {
   startWorkout(workout.routine.id, workout.intensity.id);
 });
 
+/* ============================== VOICE RECORDER (own drill sergeant voice) ============================== */
+// Records real audio for the 4 fixed cue points (prepare/exerciseStart/restStart/finish) via
+// MediaRecorder, stored as Blobs in IndexedDB (device-local, same "nothing uploaded" model as
+// every other app in this family). Deliberately fixed generic phrases, not per-exercise --
+// a real recording can't do live text-to-speech of a name that hasn't been recorded, so this
+// trades that dynamic-name flexibility (which TTS still has, and remains the fallback) for a
+// real human voice on the 4 moments that matter most.
+const VOICE_CUES = [
+  { id: "prepare", label: "Get Ready", script: "Attention! On your feet! We start in five!" },
+  { id: "exerciseStart", label: "Exercise Start", script: "Let's go! Move it, move it!" },
+  { id: "restStart", label: "Rest", script: "Rest! Catch your breath, get ready to go again!" },
+  { id: "finish", label: "Workout Complete", script: "Outstanding effort! Dismissed!" },
+];
+const VOICE_DB_NAME = "homeCircuitVoiceDB";
+const VOICE_STORE = "clips";
+let voiceDb = null;
+let voiceClips = {}; // cue id -> Blob, in-memory cache so playback never waits on IndexedDB
+
+function openVoiceDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(VOICE_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const database = req.result;
+      if (!database.objectStoreNames.contains(VOICE_STORE)) database.createObjectStore(VOICE_STORE, { keyPath: "id" });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function voiceDbPut(record) {
+  return new Promise((resolve, reject) => {
+    const tx = voiceDb.transaction(VOICE_STORE, "readwrite");
+    tx.objectStore(VOICE_STORE).put(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+function voiceDbDelete(id) {
+  return new Promise((resolve, reject) => {
+    const tx = voiceDb.transaction(VOICE_STORE, "readwrite");
+    tx.objectStore(VOICE_STORE).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+async function loadVoiceClips() {
+  voiceDb = await openVoiceDb();
+  const all = await new Promise((resolve, reject) => {
+    const tx = voiceDb.transaction(VOICE_STORE, "readonly");
+    const req = tx.objectStore(VOICE_STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+  voiceClips = {};
+  all.forEach(c => { voiceClips[c.id] = c.blob; });
+}
+
+let activeRecorder = null;
+let activeChunks = [];
+let activeStream = null;
+
+async function toggleRecording(cueId, btn) {
+  if (activeRecorder && activeRecorder.state === "recording") {
+    activeRecorder.stop();
+    return;
+  }
+  try {
+    activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    alert("Couldn't access your microphone: " + e.message);
+    return;
+  }
+  activeChunks = [];
+  activeRecorder = new MediaRecorder(activeStream);
+  activeRecorder._cueId = cueId;
+  activeRecorder.ondataavailable = (e) => { if (e.data.size > 0) activeChunks.push(e.data); };
+  activeRecorder.onstop = async () => {
+    const blob = new Blob(activeChunks, { type: activeRecorder.mimeType || "audio/webm" });
+    activeStream.getTracks().forEach(t => t.stop());
+    activeStream = null;
+    activeRecorder = null;
+    await voiceDbPut({ id: cueId, blob, savedAt: Date.now() });
+    voiceClips[cueId] = blob;
+    // First-ever save switches the default coach style to sergeant, per request --
+    // recordings only make sense being heard once they're actually the active voice.
+    if (state.coachStyle !== "sergeant") {
+      state.coachStyle = "sergeant";
+      saveState();
+    }
+    renderVoiceRecorderScreen();
+  };
+  activeRecorder.start();
+  renderVoiceRecorderScreen();
+}
+function playClip(cueId) {
+  const blob = voiceClips[cueId];
+  if (!blob) return;
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  audio.addEventListener("ended", () => URL.revokeObjectURL(url));
+  audio.play().catch(() => {});
+}
+async function deleteClip(cueId) {
+  if (!confirm("Delete this recording?")) return;
+  await voiceDbDelete(cueId);
+  delete voiceClips[cueId];
+  renderVoiceRecorderScreen();
+}
+
+function renderVoiceRecorderScreen() {
+  const list = document.getElementById("voiceClipList");
+  list.innerHTML = "";
+  const isRecording = activeRecorder && activeRecorder.state === "recording";
+  VOICE_CUES.forEach(cue => {
+    const hasClip = !!voiceClips[cue.id];
+    const recordingThis = isRecording && activeRecorder._cueId === cue.id;
+    const card = document.createElement("div");
+    card.className = "voice-clip-card";
+    card.innerHTML = `
+      <div class="vc-label">🎙️ ${cue.label}
+        <span class="vc-status ${hasClip ? "recorded" : ""}">${hasClip ? "✅ Recorded" : "Not recorded yet"}</span>
+      </div>
+      <div class="vc-script">"${cue.script}"</div>
+      <div class="vc-controls">
+        <button class="vc-btn ${recordingThis ? "recording" : ""}" data-record="${cue.id}">
+          ${recordingThis ? "⏹ Stop" : hasClip ? "🔴 Re-record" : "🔴 Record"}
+        </button>
+        <button class="vc-btn play" data-play="${cue.id}" ${hasClip ? "" : "disabled"}>▶️ Play</button>
+        ${hasClip ? `<button class="vc-btn" data-delete="${cue.id}">🗑 Delete</button>` : ""}
+      </div>`;
+    list.appendChild(card);
+  });
+  list.querySelectorAll("[data-record]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (activeRecorder && activeRecorder.state === "recording") { activeRecorder.stop(); return; }
+      toggleRecording(btn.getAttribute("data-record"), btn);
+    });
+  });
+  list.querySelectorAll("[data-play]").forEach(btn => {
+    btn.addEventListener("click", () => playClip(btn.getAttribute("data-play")));
+  });
+  list.querySelectorAll("[data-delete]").forEach(btn => {
+    btn.addEventListener("click", () => deleteClip(btn.getAttribute("data-delete")));
+  });
+}
+document.getElementById("goVoiceRecorderBtn").addEventListener("click", () => {
+  renderVoiceRecorderScreen();
+  show("screen-voice-recorder");
+});
+
+// Routes every coach cue through here: plays the user's own recording when sergeant mode is
+// active and a clip exists for this specific cue, otherwise falls back to speechSynthesis
+// exactly as before (covers calm mode always, and any cue not yet recorded).
+function speakCue(cueId, ttsText) {
+  if (!state.voiceEnabled) return;
+  if (state.coachStyle === "sergeant" && voiceClips[cueId]) {
+    playClip(cueId);
+    return;
+  }
+  speak(ttsText);
+}
+
 /* ============================== INIT ============================== */
 refreshHomeStats();
 renderRoutineGrid();
+loadVoiceClips();
 </script>
 </body>
 </html>
