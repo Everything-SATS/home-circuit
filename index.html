@@ -1162,14 +1162,6 @@ function openVoiceDb() {
     req.onerror = () => reject(req.error);
   });
 }
-function voiceDbGet(id) {
-  return new Promise((resolve, reject) => {
-    const tx = voiceDb.transaction(VOICE_STORE, "readonly");
-    const req = tx.objectStore(VOICE_STORE).get(id);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
-}
 function voiceDbPut(record) {
   return new Promise((resolve, reject) => {
     const tx = voiceDb.transaction(VOICE_STORE, "readwrite");
@@ -1222,7 +1214,10 @@ async function toggleRecording(cueId) {
     activeStream.getTracks().forEach(t => t.stop());
     activeStream = null;
     activeRecorder = null;
-    const existing = (await voiceDbGet(cueId))?.blobs || [];
+    // Use the already-migrated in-memory cache, not a fresh IndexedDB read -- a raw read
+    // would return an old-format {id, blob} record as-is (no .blobs field) for anyone who
+    // recorded before multi-take support existed, silently losing that earlier take.
+    const existing = voiceClips[cueId] || [];
     const blobs = [...existing, blob];
     await voiceDbPut({ id: cueId, blobs, savedAt: Date.now() });
     voiceClips[cueId] = blobs;
