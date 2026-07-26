@@ -426,7 +426,8 @@
   <!-- ===== Workout running ===== -->
   <div id="screen-workout" class="screen">
     <div class="back-row"><button class="back-btn" id="quitWorkoutBtn">← Quit</button><div class="screen-title" id="workoutScreenTitle"></div>
-      <button class="back-btn" id="genderToggleBtn" style="margin-left:auto;" title="Switch figure">🧑</button>
+      <button class="back-btn" id="musicToggleBtn" style="margin-left:auto;" title="Toggle background music">🎵</button>
+      <button class="back-btn" id="genderToggleBtn" title="Switch figure">🧑</button>
       <button class="back-btn" id="coachStyleBtn" title="Switch coach voice style">🎙️</button>
       <button class="back-btn" id="voiceToggleBtn">🔊</button>
     </div>
@@ -546,7 +547,7 @@ const INTENSITIES = [
 /* ============================== STATE / PERSISTENCE ============================== */
 const STORE_KEY = "homecircuit_state_v1";
 function defaultState() {
-  return { streak: 0, lastPlayDate: null, sessionsCompleted: 0, totalSecondsTrained: 0, voiceEnabled: true, coachStyle: "calm", figureGender: "female" };
+  return { streak: 0, lastPlayDate: null, sessionsCompleted: 0, totalSecondsTrained: 0, voiceEnabled: true, coachStyle: "calm", figureGender: "female", musicEnabled: true };
 }
 let state = loadState();
 function loadState() {
@@ -584,6 +585,7 @@ function goHome() {
   if (workoutTimer) clearInterval(workoutTimer);
   speechSynthesis.cancel();
   releaseWakeLock();
+  stopMusic();
   refreshHomeStats();
   show("screen-home");
 }
@@ -645,6 +647,95 @@ function beep(freq, dur) {
     osc.connect(gain); gain.connect(beepCtx.destination);
     osc.start(); osc.stop(beepCtx.currentTime + dur + 0.02);
   } catch (e) { /* audio unavailable -- silently skip the tick sound */ }
+}
+
+/* ============================== BACKGROUND MUSIC ============================== */
+// A fully synthesized upbeat 4-on-the-floor loop (kick/hihat/clap/bass, no samples) --
+// generated in-browser via Web Audio oscillators + filtered noise, same zero-external-asset
+// approach as everything else in this app family (nothing to license, nothing to download).
+// Uses a standard lookahead scheduler (setInterval polls slightly ahead of real time and
+// schedules exact-timed Web Audio events) rather than scheduling notes directly on a
+// setInterval tick -- setInterval alone drifts audibly over a multi-minute workout.
+const MUSIC_BPM = 126;
+const MUSIC_SCHEDULE_AHEAD_SEC = 0.1;
+const MUSIC_LOOKAHEAD_MS = 25;
+let musicGainNode = null;
+let musicTimer = null;
+let musicStep = 0;
+let musicNextStepTime = 0;
+
+function stepSeconds() { return 60 / MUSIC_BPM / 4; } // 16th note
+
+function playKick(time) {
+  const osc = beepCtx.createOscillator(), gain = beepCtx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(150, time);
+  osc.frequency.exponentialRampToValueAtTime(45, time + 0.15);
+  gain.gain.setValueAtTime(0.9, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.18);
+  osc.connect(gain); gain.connect(musicGainNode);
+  osc.start(time); osc.stop(time + 0.2);
+}
+function playHihat(time) {
+  const size = Math.floor(beepCtx.sampleRate * 0.05);
+  const buffer = beepCtx.createBuffer(1, size, beepCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < size; i++) data[i] = Math.random() * 2 - 1;
+  const noise = beepCtx.createBufferSource(); noise.buffer = buffer;
+  const hp = beepCtx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 7000;
+  const gain = beepCtx.createGain();
+  gain.gain.setValueAtTime(0.22, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.04);
+  noise.connect(hp); hp.connect(gain); gain.connect(musicGainNode);
+  noise.start(time); noise.stop(time + 0.05);
+}
+function playClap(time) {
+  const size = Math.floor(beepCtx.sampleRate * 0.15);
+  const buffer = beepCtx.createBuffer(1, size, beepCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < size; i++) data[i] = Math.random() * 2 - 1;
+  const noise = beepCtx.createBufferSource(); noise.buffer = buffer;
+  const bp = beepCtx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1500; bp.Q.value = 1.2;
+  const gain = beepCtx.createGain();
+  gain.gain.setValueAtTime(0.3, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.13);
+  noise.connect(bp); bp.connect(gain); gain.connect(musicGainNode);
+  noise.start(time); noise.stop(time + 0.15);
+}
+function playBass(time, freq) {
+  const osc = beepCtx.createOscillator(), gain = beepCtx.createGain();
+  osc.type = "triangle"; osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.28, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.22);
+  osc.connect(gain); gain.connect(musicGainNode);
+  osc.start(time); osc.stop(time + 0.25);
+}
+function scheduleMusicStep(step, time) {
+  if (step % 4 === 0) { playKick(time); playBass(time, step % 8 === 0 ? 55.0 : 82.41); } // A1 / E2
+  if (step % 2 === 0) playHihat(time);
+  if (step === 4 || step === 12) playClap(time);
+}
+function musicSchedulerLoop() {
+  while (musicNextStepTime < beepCtx.currentTime + MUSIC_SCHEDULE_AHEAD_SEC) {
+    scheduleMusicStep(musicStep, musicNextStepTime);
+    musicNextStepTime += stepSeconds();
+    musicStep = (musicStep + 1) % 16;
+  }
+}
+function startMusic() {
+  if (!state.musicEnabled || !beepCtx || musicTimer) return;
+  if (!musicGainNode) {
+    musicGainNode = beepCtx.createGain();
+    musicGainNode.gain.value = 0.5; // background level -- shouldn't compete with the voice cues
+    musicGainNode.connect(beepCtx.destination);
+  }
+  musicStep = 0;
+  musicNextStepTime = beepCtx.currentTime + 0.05;
+  musicSchedulerLoop();
+  musicTimer = setInterval(musicSchedulerLoop, MUSIC_LOOKAHEAD_MS);
+}
+function stopMusic() {
+  if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
 }
 
 /* ============================== HOME RENDER ============================== */
@@ -968,11 +1059,13 @@ function startWorkout(routineId, intensityId) {
   document.getElementById("voiceToggleBtn").textContent = state.voiceEnabled ? "🔊" : "🔇";
   document.getElementById("coachStyleBtn").textContent = state.coachStyle === "sergeant" ? "📯" : "🎙️";
   document.getElementById("genderToggleBtn").textContent = state.figureGender === "female" ? "🧑" : "🧔";
+  document.getElementById("musicToggleBtn").textContent = state.musicEnabled ? "🎵" : "🔇";
   document.getElementById("pauseBtn").textContent = "Pause";
   renderWorkoutStep();
   speakCue("prepare", coachStyle().prepare());
   show("screen-workout");
   acquireWakeLock();
+  startMusic();
   if (workoutTimer) clearInterval(workoutTimer);
   workoutTimer = setInterval(workoutTick, 1000);
 }
@@ -1078,6 +1171,7 @@ function finishWorkout() {
   clearInterval(workoutTimer);
   speechSynthesis.cancel();
   releaseWakeLock();
+  stopMusic();
   speakCue("finish", coachStyle().finish());
   state.sessionsCompleted++;
   state.totalSecondsTrained += workout.elapsedSeconds;
@@ -1099,7 +1193,13 @@ document.getElementById("quitWorkoutBtn").addEventListener("click", () => {
 document.getElementById("pauseBtn").addEventListener("click", () => {
   workout.paused = !workout.paused;
   document.getElementById("pauseBtn").textContent = workout.paused ? "Resume" : "Pause";
-  if (workout.paused) speechSynthesis.cancel();
+  if (workout.paused) { speechSynthesis.cancel(); stopMusic(); } else { startMusic(); }
+});
+document.getElementById("musicToggleBtn").addEventListener("click", () => {
+  state.musicEnabled = !state.musicEnabled;
+  saveState();
+  document.getElementById("musicToggleBtn").textContent = state.musicEnabled ? "🎵" : "🔇";
+  if (state.musicEnabled && !workout.paused) startMusic(); else stopMusic();
 });
 document.getElementById("skipBtn").addEventListener("click", () => {
   advanceWorkoutPhase();
