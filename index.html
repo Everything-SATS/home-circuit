@@ -90,7 +90,227 @@
   .phase-tag.prepare { background: var(--track); color: var(--ink-soft); }
   .phase-tag.work { background: var(--good-soft); color: var(--good); }
   .phase-tag.rest { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); color: var(--accent); }
-  .wc-icon { font-size: 3rem; }
+  .wc-icon { font-size: 3rem; min-height: 108px; display: flex; align-items: center; justify-content: center; }
+  .wc-icon svg.stick { width: 78px; height: 108px; overflow: visible; }
+  .wc-icon svg.stick .head { fill: var(--accent); }
+  .wc-icon svg.stick .torso, .wc-icon svg.stick .arm-l line, .wc-icon svg.stick .arm-r line,
+  .wc-icon svg.stick .leg-l line, .wc-icon svg.stick .leg-r line {
+    stroke: var(--accent); stroke-width: 6.5; stroke-linecap: round; fill: none;
+  }
+  .wc-icon svg.stick .skirt { fill: var(--accent); opacity: 0.9; }
+  .wc-icon svg.stick .figure { transform-box: view-box; transform-origin: 50px 76px; }
+  .wc-icon svg.stick .upper-body { transform-box: view-box; transform-origin: 50px 76px; }
+  .wc-icon svg.stick .arm-l { transform-box: view-box; transform-origin: 50px 32px; }
+  .wc-icon svg.stick .arm-r { transform-box: view-box; transform-origin: 50px 32px; }
+  .wc-icon svg.stick .leg-l { transform-box: view-box; transform-origin: 50px 76px; }
+  .wc-icon svg.stick .leg-r { transform-box: view-box; transform-origin: 50px 76px; }
+
+  /* ---- Reusable animation primitives ---- */
+  @keyframes armsOverhead { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(180deg); } }
+  @keyframes armsOverheadR { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-180deg); } }
+  @keyframes armOutL { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(95deg); } }
+  @keyframes armOutR { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-95deg); } }
+  @keyframes armOutWideL { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(150deg); } }
+  @keyframes armOutWideR { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-150deg); } }
+  @keyframes armPumpL { 0%,100% { transform: rotate(-15deg); } 50% { transform: rotate(60deg); } }
+  @keyframes armPumpR { 0%,100% { transform: rotate(15deg); } 50% { transform: rotate(-60deg); } }
+  @keyframes armCircleL { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  @keyframes armCircleR { 0% { transform: rotate(0deg); } 100% { transform: rotate(-360deg); } }
+  @keyframes legOutL { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(38deg); } }
+  @keyframes legOutR { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-38deg); } }
+  @keyframes legDriveL { 0%,60%,100% { transform: rotate(0deg); } 30% { transform: rotate(-105deg); } }
+  @keyframes legDriveR { 0%,60%,100% { transform: rotate(0deg); } 30% { transform: rotate(105deg); } }
+  @keyframes legKickBackL { 0%,60%,100% { transform: rotate(0deg); } 30% { transform: rotate(140deg); } }
+  @keyframes legKickBackR { 0%,60%,100% { transform: rotate(0deg); } 30% { transform: rotate(-140deg); } }
+  @keyframes legStepFwdL { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-55deg); } }
+  @keyframes legStepBackR { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-30deg); } }
+  @keyframes legStepFwdR { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(55deg); } }
+  @keyframes legStepBackL { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(30deg); } }
+  @keyframes figureBob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(15px); } }
+  @keyframes figureHop { 0%,55%,100% { transform: translateY(0); } 30% { transform: translateY(15px); } 75% { transform: translateY(-10px); } }
+  @keyframes bodyLean { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(14deg); } }
+  @keyframes bodyLeanHold { 0%,100% { transform: rotate(68deg); } 50% { transform: rotate(72deg); } }
+  @keyframes wobble { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(2.5deg); } }
+  @keyframes holdStill { 0%,100% { transform: rotate(0deg); } }
+  @keyframes lieProne { 0%,100% { transform: rotate(90deg); } }
+  @keyframes lieSupine { 0%,100% { transform: rotate(-90deg); } }
+  @keyframes lieSide { 0%,100% { transform: rotate(90deg); } }
+  @keyframes plankWobble { 0%,100% { transform: translateY(0); } 50% { transform: translateY(2px); } }
+
+  /* ---- Per-exercise assignments (figureId -> which primitive drives which limb) ---- */
+  [data-ex="armCircles"] .arm-l { animation: armCircleL 2.2s linear infinite; }
+  [data-ex="armCircles"] .arm-r { animation: armCircleR 2.2s linear infinite; }
+
+  [data-ex="jumpingJacks"] .arm-l { animation: armsOverhead 0.9s ease-in-out infinite; }
+  [data-ex="jumpingJacks"] .arm-r { animation: armsOverheadR 0.9s ease-in-out infinite; }
+  [data-ex="jumpingJacks"] .leg-l { animation: legOutL 0.9s ease-in-out infinite; }
+  [data-ex="jumpingJacks"] .leg-r { animation: legOutR 0.9s ease-in-out infinite; }
+  [data-ex="jumpingJacks"] .figure { animation: figureHop 0.9s ease-in-out infinite; }
+
+  [data-ex="highKnees"] .leg-l { animation: legDriveL 0.7s ease-in-out infinite; }
+  [data-ex="highKnees"] .leg-r { animation: legDriveR 0.7s ease-in-out infinite 0.35s; }
+  [data-ex="highKnees"] .arm-l { animation: armPumpL 0.7s ease-in-out infinite 0.35s; }
+  [data-ex="highKnees"] .arm-r { animation: armPumpR 0.7s ease-in-out infinite; }
+
+  [data-ex="torsoTwists"] .upper-body { animation: bodyTwist 1.6s ease-in-out infinite; }
+  [data-ex="torsoTwists"] .arm-l { animation: armPumpL 1.6s ease-in-out infinite; }
+  [data-ex="torsoTwists"] .arm-r { animation: armPumpR 1.6s ease-in-out infinite; }
+  @keyframes bodyTwist { 0%,100% { transform: rotate(-14deg); } 50% { transform: rotate(14deg); } }
+
+  [data-ex="squats"] .figure { animation: figureBob 1.6s ease-in-out infinite; }
+  [data-ex="squats"] .leg-l { animation: legOutL 1.6s ease-in-out infinite; }
+  [data-ex="squats"] .leg-r { animation: legOutR 1.6s ease-in-out infinite; }
+  [data-ex="squats"] .upper-body { animation: bodyLean 1.6s ease-in-out infinite; }
+  [data-ex="squats"] .arm-l { animation: armOutWideR 1.6s ease-in-out infinite; }
+  [data-ex="squats"] .arm-r { animation: armOutWideL 1.6s ease-in-out infinite; }
+
+  [data-ex="pushups"] .figure { animation: lieProne 1.8s ease-in-out infinite; }
+  [data-ex="pushups"] .upper-body { animation: pushupDip 1.8s ease-in-out infinite; }
+  [data-ex="pushups"] .arm-l { animation: pushupArm 1.8s ease-in-out infinite; }
+  [data-ex="pushups"] .arm-r { animation: pushupArm 1.8s ease-in-out infinite; }
+  @keyframes pushupDip { 0%,100% { transform: translate(0,0); } 50% { transform: translate(6px,4px); } }
+  @keyframes pushupArm { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(35deg); } }
+
+  [data-ex="lunges"] .figure { animation: figureBob 1.7s ease-in-out infinite; }
+  [data-ex="lunges"] .leg-l { animation: legStepFwdL 1.7s ease-in-out infinite; }
+  [data-ex="lunges"] .leg-r { animation: legStepBackR 1.7s ease-in-out infinite; }
+  [data-ex="lunges"] .arm-l { animation: armPumpR 1.7s ease-in-out infinite; }
+  [data-ex="lunges"] .arm-r { animation: armPumpL 1.7s ease-in-out infinite; }
+
+  [data-ex="plank"] .figure { animation: lieProne 2.4s ease-in-out infinite; }
+  [data-ex="plank"] .upper-body { animation: plankWobble 2.4s ease-in-out infinite; }
+
+  [data-ex="gluteBridges"] .figure { animation: lieSupine 2s ease-in-out infinite; }
+  [data-ex="gluteBridges"] .leg-l { animation: bridgeLift 2s ease-in-out infinite; }
+  [data-ex="gluteBridges"] .leg-r { animation: bridgeLift 2s ease-in-out infinite; }
+  @keyframes bridgeLift { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+
+  [data-ex="superman"] .figure { animation: lieProne 2s ease-in-out infinite; }
+  [data-ex="superman"] .upper-body { animation: supermanLift 2s ease-in-out infinite; }
+  [data-ex="superman"] .leg-l { animation: supermanLift 2s ease-in-out infinite; }
+  [data-ex="superman"] .leg-r { animation: supermanLift 2s ease-in-out infinite; }
+  [data-ex="superman"] .arm-l { animation: armOutWideL 2s ease-in-out infinite; }
+  [data-ex="superman"] .arm-r { animation: armOutWideR 2s ease-in-out infinite; }
+  @keyframes supermanLift { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+
+  [data-ex="wallSit"] .figure { animation: wallSitFig 3s ease-in-out infinite; }
+  [data-ex="wallSit"] .leg-l { animation: wallSitLegL 3s ease-in-out infinite; }
+  [data-ex="wallSit"] .leg-r { animation: wallSitLegR 3s ease-in-out infinite; }
+  [data-ex="wallSit"] .upper-body { animation: wobble 3s ease-in-out infinite; }
+  @keyframes wallSitFig { 0%,100% { transform: translateY(15px); } 50% { transform: translateY(17px); } }
+  @keyframes wallSitLegL { 0%,100% { transform: rotate(20deg); } 50% { transform: rotate(24deg); } }
+  @keyframes wallSitLegR { 0%,100% { transform: rotate(-20deg); } 50% { transform: rotate(-24deg); } }
+
+  [data-ex="sidePlank"] .figure { animation: lieSide 2.4s ease-in-out infinite; }
+  [data-ex="sidePlank"] .upper-body { animation: wobble 2.4s ease-in-out infinite; }
+  [data-ex="sidePlank"] .arm-r { transform: rotate(-180deg); }
+
+  [data-ex="tricepDips"] .figure { animation: figureBob 1.5s ease-in-out infinite; }
+  [data-ex="tricepDips"] .arm-l { animation: armPumpR 1.5s ease-in-out infinite; }
+  [data-ex="tricepDips"] .arm-r { animation: armPumpL 1.5s ease-in-out infinite; }
+
+  [data-ex="calfRaises"] .figure { animation: calfRise 1.5s ease-in-out infinite; }
+  @keyframes calfRise { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+
+  [data-ex="mountainClimbers"] .figure { animation: lieProne 0.8s ease-in-out infinite; }
+  [data-ex="mountainClimbers"] .leg-l { animation: legDriveL 0.8s ease-in-out infinite; }
+  [data-ex="mountainClimbers"] .leg-r { animation: legDriveR 0.8s ease-in-out infinite 0.4s; }
+
+  [data-ex="burpees"] .figure { animation: burpeeFig 2.4s ease-in-out infinite; }
+  [data-ex="burpees"] .upper-body { animation: burpeeBody 2.4s ease-in-out infinite; }
+  [data-ex="burpees"] .arm-l { animation: burpeeArm 2.4s ease-in-out infinite; }
+  [data-ex="burpees"] .arm-r { animation: burpeeArm 2.4s ease-in-out infinite; }
+  [data-ex="burpees"] .leg-l { animation: legOutL 2.4s ease-in-out infinite; }
+  [data-ex="burpees"] .leg-r { animation: legOutR 2.4s ease-in-out infinite; }
+  @keyframes burpeeFig {
+    0%,100% { transform: translateY(0) rotate(0deg); }
+    25% { transform: translateY(14px) rotate(0deg); }
+    50% { transform: translateY(10px) rotate(90deg); }
+    75% { transform: translateY(-12px) rotate(0deg); }
+  }
+  @keyframes burpeeBody {
+    0%,100% { transform: rotate(0deg); } 25% { transform: rotate(14deg); }
+    50% { transform: rotate(0deg); } 75% { transform: rotate(0deg); }
+  }
+  @keyframes burpeeArm {
+    0%,100% { transform: rotate(0deg); } 25% { transform: rotate(-90deg); }
+    50% { transform: rotate(30deg); } 75% { transform: rotate(180deg); }
+  }
+
+  [data-ex="squatJumps"] .figure { animation: squatJumpFig 1.3s ease-in-out infinite; }
+  [data-ex="squatJumps"] .leg-l { animation: legOutL 1.3s ease-in-out infinite; }
+  [data-ex="squatJumps"] .leg-r { animation: legOutR 1.3s ease-in-out infinite; }
+  [data-ex="squatJumps"] .arm-l { animation: armsOverhead 1.3s ease-in-out infinite; }
+  [data-ex="squatJumps"] .arm-r { animation: armsOverheadR 1.3s ease-in-out infinite; }
+  @keyframes squatJumpFig {
+    0%,100% { transform: translateY(0); } 35% { transform: translateY(15px); } 70% { transform: translateY(-14px); }
+  }
+
+  [data-ex="starJumps"] .arm-l { animation: armOutWideR 0.9s ease-in-out infinite; }
+  [data-ex="starJumps"] .arm-r { animation: armOutWideL 0.9s ease-in-out infinite; }
+  [data-ex="starJumps"] .leg-l { animation: legOutWideL 0.9s ease-in-out infinite; }
+  [data-ex="starJumps"] .leg-r { animation: legOutWideR 0.9s ease-in-out infinite; }
+  [data-ex="starJumps"] .figure { animation: figureHop 0.9s ease-in-out infinite; }
+  @keyframes legOutWideL { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(55deg); } }
+  @keyframes legOutWideR { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-55deg); } }
+
+  [data-ex="buttKicks"] .leg-l { animation: legKickBackL 0.6s ease-in-out infinite; }
+  [data-ex="buttKicks"] .leg-r { animation: legKickBackR 0.6s ease-in-out infinite 0.3s; }
+  [data-ex="buttKicks"] .arm-l { animation: armPumpL 0.6s ease-in-out infinite 0.3s; }
+  [data-ex="buttKicks"] .arm-r { animation: armPumpR 0.6s ease-in-out infinite; }
+
+  [data-ex="bicycleCrunches"] .figure { animation: lieSupine 1.3s ease-in-out infinite; }
+  [data-ex="bicycleCrunches"] .leg-l { animation: legDriveL 1.3s ease-in-out infinite; }
+  [data-ex="bicycleCrunches"] .leg-r { animation: legDriveR 1.3s ease-in-out infinite 0.65s; }
+  [data-ex="bicycleCrunches"] .arm-r { animation: armPumpR 1.3s ease-in-out infinite; }
+  [data-ex="bicycleCrunches"] .arm-l { animation: armPumpL 1.3s ease-in-out infinite 0.65s; }
+
+  [data-ex="russianTwists"] .figure { animation: russianTwistFig 1.4s ease-in-out infinite; }
+  @keyframes russianTwistFig { 0%,100% { transform: translateY(11px); } 50% { transform: translateY(12px); } }
+  [data-ex="russianTwists"] .upper-body { animation: bodyTwist 1.4s ease-in-out infinite; }
+  [data-ex="russianTwists"] .arm-l { animation: armPumpL 1.4s ease-in-out infinite; }
+  [data-ex="russianTwists"] .arm-r { animation: armPumpR 1.4s ease-in-out infinite; }
+
+  [data-ex="plankShoulderTaps"] .figure { animation: lieProne 1.6s ease-in-out infinite; }
+  [data-ex="plankShoulderTaps"] .arm-l { animation: shoulderTapL 1.6s ease-in-out infinite; }
+  [data-ex="plankShoulderTaps"] .arm-r { animation: shoulderTapR 1.6s ease-in-out infinite 0.8s; }
+  @keyframes shoulderTapL { 0%,60%,100% { transform: rotate(0deg); } 30% { transform: rotate(-150deg); } }
+  @keyframes shoulderTapR { 0%,60%,100% { transform: rotate(0deg); } 30% { transform: rotate(150deg); } }
+
+  [data-ex="legRaises"] .figure { animation: lieSupine 1.6s ease-in-out infinite; }
+  [data-ex="legRaises"] .leg-l { animation: legRaise 1.6s ease-in-out infinite; }
+  [data-ex="legRaises"] .leg-r { animation: legRaise 1.6s ease-in-out infinite; }
+  @keyframes legRaise { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(85deg); } }
+
+  [data-ex="childsPose"] .figure { animation: childsPoseFig 3s ease-in-out infinite; }
+  [data-ex="childsPose"] .upper-body { animation: bodyLeanHold 3s ease-in-out infinite; }
+  [data-ex="childsPose"] .arm-l { animation: childsPoseArmL 3s ease-in-out infinite; }
+  [data-ex="childsPose"] .arm-r { animation: childsPoseArmR 3s ease-in-out infinite; }
+  @keyframes childsPoseFig { 0%,100% { transform: translateY(22px); } 50% { transform: translateY(24px); } }
+  @keyframes childsPoseArmL { 0%,100% { transform: rotate(150deg); } 50% { transform: rotate(154deg); } }
+  @keyframes childsPoseArmR { 0%,100% { transform: rotate(-150deg); } 50% { transform: rotate(-154deg); } }
+
+  [data-ex="quadStretch"] .leg-l { animation: quadStretchLeg 3s ease-in-out infinite; }
+  [data-ex="quadStretch"] .upper-body { animation: wobble 3s ease-in-out infinite; }
+  @keyframes quadStretchLeg { 0%,100% { transform: rotate(150deg); } 50% { transform: rotate(154deg); } }
+
+  [data-ex="hamstringStretch"] .upper-body { animation: bodyLeanHold 3s ease-in-out infinite; }
+  [data-ex="hamstringStretch"] .arm-l { animation: hamstringArmL 3s ease-in-out infinite; }
+  [data-ex="hamstringStretch"] .arm-r { animation: hamstringArmR 3s ease-in-out infinite; }
+  @keyframes hamstringArmL { 0%,100% { transform: rotate(60deg); } 50% { transform: rotate(64deg); } }
+  @keyframes hamstringArmR { 0%,100% { transform: rotate(-60deg); } 50% { transform: rotate(-64deg); } }
+
+  [data-ex="chestOpener"] .upper-body { animation: chestOpen 3s ease-in-out infinite; }
+  [data-ex="chestOpener"] .arm-l { animation: chestOpenerArmL 3s ease-in-out infinite; }
+  [data-ex="chestOpener"] .arm-r { animation: chestOpenerArmR 3s ease-in-out infinite; }
+  @keyframes chestOpenerArmL { 0%,100% { transform: rotate(-165deg); } 50% { transform: rotate(-168deg); } }
+  @keyframes chestOpenerArmR { 0%,100% { transform: rotate(165deg); } 50% { transform: rotate(168deg); } }
+  @keyframes chestOpen { 0%,100% { transform: rotate(-8deg); } 50% { transform: rotate(-11deg); } }
+
+  [data-ex="deepBreathing"] .upper-body { animation: breathe 4s ease-in-out infinite; }
+  [data-ex="deepBreathing"] .arm-l { animation: armOutL 4s ease-in-out infinite; }
+  [data-ex="deepBreathing"] .arm-r { animation: armOutR 4s ease-in-out infinite; }
+  @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
   .wc-name { font-size: 1.35rem; font-weight: 900; margin: 8px 0 4px; }
   .wc-cue { font-size: 0.86rem; color: var(--ink-soft); max-width: 340px; margin: 0 auto 18px; min-height: 1.3em; }
   .wc-timer { font-size: 3.6rem; font-weight: 900; font-variant-numeric: tabular-nums; color: var(--accent); line-height: 1; }
@@ -175,7 +395,8 @@
   <!-- ===== Workout running ===== -->
   <div id="screen-workout" class="screen">
     <div class="back-row"><button class="back-btn" id="quitWorkoutBtn">← Quit</button><div class="screen-title" id="workoutScreenTitle"></div>
-      <button class="back-btn" id="coachStyleBtn" style="margin-left:auto;" title="Switch coach voice style">🎙️</button>
+      <button class="back-btn" id="genderToggleBtn" style="margin-left:auto;" title="Switch figure">🧑</button>
+      <button class="back-btn" id="coachStyleBtn" title="Switch coach voice style">🎙️</button>
       <button class="back-btn" id="voiceToggleBtn">🔊</button>
     </div>
     <div class="workout-progress-label" id="workoutProgressLabel"></div>
@@ -294,7 +515,7 @@ const INTENSITIES = [
 /* ============================== STATE / PERSISTENCE ============================== */
 const STORE_KEY = "homecircuit_state_v1";
 function defaultState() {
-  return { streak: 0, lastPlayDate: null, sessionsCompleted: 0, totalSecondsTrained: 0, voiceEnabled: true, coachStyle: "calm" };
+  return { streak: 0, lastPlayDate: null, sessionsCompleted: 0, totalSecondsTrained: 0, voiceEnabled: true, coachStyle: "calm", figureGender: "female" };
 }
 let state = loadState();
 function loadState() {
@@ -557,11 +778,37 @@ const INTENSITY_LEVELS = {
 };
 function resolveExercise(id, intensityId) {
   const pool = FAMILY_POOLS[id];
-  if (!pool || !pool.length) return EXERCISES[id];
+  if (!pool || !pool.length) return Object.assign({ figureId: id }, EXERCISES[id]);
   const allowedLevels = INTENSITY_LEVELS[intensityId] || INTENSITY_LEVELS.standard;
   const candidates = pool.filter(it => allowedLevels.includes(it.level));
   const chosen = (candidates.length ? candidates : pool)[Math.floor(Math.random() * (candidates.length ? candidates.length : pool.length))];
-  return { name: chosen.name, icon: chosen.icon, cue: chosen.cue };
+  return { name: chosen.name, icon: chosen.icon, cue: chosen.cue, figureId: id };
+}
+
+/* ============================== ANIMATED FORM FIGURE ============================== */
+// Bald stick-figure "emoji" replacement for the work-phase icon -- Unicode emoji can't
+// actually depict body positions (a squat/plank/lunge glyph doesn't exist), so this draws
+// and animates a real pose per exercise instead. Single-segment limbs (shoulder->hand,
+// hip->foot) rotating around their joint via CSS transforms -- see the [data-ex="..."]
+// rules above for what each of the 28 EXERCISES keys actually does. Gender is a purely
+// cosmetic overlay (a static skirt shape for female) on the identical rig/joints, so
+// every animation works unchanged for both -- switching gender never needs new keyframes.
+function stickFigureSVG(figureId) {
+  const female = state.figureGender === "female";
+  const skirt = female ? '<path class="skirt" d="M40,74 L60,74 L67,93 L33,93 Z"/>' : "";
+  return `<svg class="stick" data-ex="${figureId}" viewBox="0 0 100 140" xmlns="http://www.w3.org/2000/svg">
+    <g class="figure">
+      <g class="leg-l"><line x1="50" y1="76" x2="45" y2="122"/></g>
+      <g class="leg-r"><line x1="50" y1="76" x2="55" y2="122"/></g>
+      ${skirt}
+      <g class="upper-body">
+        <line class="torso" x1="50" y1="32" x2="50" y2="76"/>
+        <g class="arm-l"><line x1="50" y1="32" x2="44" y2="60"/></g>
+        <g class="arm-r"><line x1="50" y1="32" x2="56" y2="60"/></g>
+        <circle class="head" cx="50" cy="18" r="11"/>
+      </g>
+    </g>
+  </svg>`;
 }
 
 function formGuideRow(name, icon, level, cue) {
@@ -689,6 +936,7 @@ function startWorkout(routineId, intensityId) {
   document.getElementById("workoutScreenTitle").textContent = routine.name;
   document.getElementById("voiceToggleBtn").textContent = state.voiceEnabled ? "🔊" : "🔇";
   document.getElementById("coachStyleBtn").textContent = state.coachStyle === "sergeant" ? "📯" : "🎙️";
+  document.getElementById("genderToggleBtn").textContent = state.figureGender === "female" ? "🧑" : "🧔";
   document.getElementById("pauseBtn").textContent = "Pause";
   renderWorkoutStep();
   speak(coachStyle().prepare());
@@ -722,7 +970,7 @@ function renderWorkoutStep() {
     document.getElementById("wcNext").textContent = `First up: ${workout.resolvedSequence[0].name}`;
   } else if (workout.phase === "work") {
     tag.className = "phase-tag work"; tag.textContent = "Work";
-    document.getElementById("wcIcon").textContent = ex.icon;
+    document.getElementById("wcIcon").innerHTML = stickFigureSVG(ex.figureId);
     document.getElementById("wcName").textContent = ex.name;
     document.getElementById("wcCue").textContent = ex.cue;
     const nex = nextExercise();
@@ -816,6 +1064,13 @@ document.getElementById("coachStyleBtn").addEventListener("click", () => {
   saveState();
   document.getElementById("coachStyleBtn").textContent = state.coachStyle === "sergeant" ? "📯" : "🎙️";
   speak(state.coachStyle === "sergeant" ? "Drill sergeant mode! Let's move!" : "Calm coach mode.");
+});
+document.getElementById("genderToggleBtn").addEventListener("click", () => {
+  state.figureGender = state.figureGender === "female" ? "male" : "female";
+  saveState();
+  document.getElementById("genderToggleBtn").textContent = state.figureGender === "female" ? "🧑" : "🧔";
+  // Re-render immediately so the swap is visible mid-workout, not just next exercise.
+  if (workout && workout.phase === "work") renderWorkoutStep();
 });
 document.getElementById("doAgainBtn").addEventListener("click", () => {
   startWorkout(workout.routine.id, workout.intensity.id);
